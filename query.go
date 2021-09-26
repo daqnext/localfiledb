@@ -101,6 +101,12 @@ func (q *Query) Desc() *Query {
 	return q
 }
 
+//TODO: check query is correct
+func (q *Query) check() error {
+
+	return nil
+}
+
 func Condition(op Operator, value interface{}) *Criterion {
 	return &Criterion{
 		op:    op,
@@ -114,6 +120,11 @@ func (s *Store) findOneQuery(source BucketSource, result interface{}, query *Que
 }
 
 func (s *Store) updateQuery(source BucketSource, dataType interface{}, query *Query, update func(record interface{}) error) error {
+	err := query.check()
+	if err != nil {
+		return err
+	}
+
 	storer := s.newStorer(dataType)
 	return s.runQuery(source, dataType, reflect.TypeOf(dataType), query, func(keys keyList, tp reflect.Type, bkt *bolt.Bucket) error {
 		for _, k := range keys {
@@ -161,6 +172,11 @@ func (s *Store) updateQuery(source BucketSource, dataType interface{}, query *Qu
 }
 
 func (s *Store) deleteQuery(source BucketSource, dataType interface{}, query *Query) error {
+	err := query.check()
+	if err != nil {
+		return err
+	}
+
 	storer := s.newStorer(dataType)
 	return s.runQuery(source, dataType, reflect.TypeOf(dataType), query, func(keys keyList, tp reflect.Type, bkt *bolt.Bucket) error {
 		for _, k := range keys {
@@ -193,12 +209,17 @@ func (s *Store) deleteQuery(source BucketSource, dataType interface{}, query *Qu
 }
 
 func (s *Store) countQuery(source BucketSource, dataType interface{}, query *Query) (int, error) {
+	err := query.check()
+	if err != nil {
+		return 0, err
+	}
+
 	query.limit = 0
 	query.offset = 0
 	//check result type
 	count := 0
 	//run query
-	err := s.runQuery(source, dataType, reflect.TypeOf(dataType), query, func(keys keyList, tp reflect.Type, bkt *bolt.Bucket) error {
+	err = s.runQuery(source, dataType, reflect.TypeOf(dataType), query, func(keys keyList, tp reflect.Type, bkt *bolt.Bucket) error {
 		count = len(keys)
 		return nil
 	})
@@ -210,6 +231,11 @@ func (s *Store) countQuery(source BucketSource, dataType interface{}, query *Que
 }
 
 func (s *Store) findQuery(source BucketSource, result interface{}, query *Query) error {
+	err := query.check()
+	if err != nil {
+		return err
+	}
+
 	//check result type
 	resultVal := reflect.ValueOf(result)
 	if resultVal.Kind() != reflect.Ptr || resultVal.Elem().Kind() != reflect.Slice {
