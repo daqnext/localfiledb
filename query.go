@@ -6,6 +6,7 @@ import (
 	"fmt"
 	bolt "go.etcd.io/bbolt"
 	"reflect"
+	"strings"
 )
 
 type Operator int
@@ -20,8 +21,8 @@ const (
 
 type QueryType int
 
-const QueryRange QueryType = 0
-const QueryEqual QueryType = 1
+const QueryRange QueryType = 1
+const QueryEqual QueryType = 2
 
 // Key is shorthand for specifying a query to run again the Key in a bolthold, simply returns ""
 // Where(bolthold.Key).Eq("testkey")
@@ -101,8 +102,67 @@ func (q *Query) Desc() *Query {
 	return q
 }
 
-//TODO: check query is correct
-func (q *Query) check() error {
+func checkQuery(q *Query) error {
+	if q == nil {
+		return errors.New("nil query condition")
+	}
+	if q.queryType != QueryEqual && q.queryType != QueryRange {
+		return errors.New("query type error, only Range or Equal supported")
+	}
+
+	if q.queryType == QueryEqual {
+		if q.equalCriteria == nil {
+			return errors.New("equal Criteria is nil")
+		}
+
+		if q.equalCriteria.value == nil {
+			return errors.New("equal Criteria value is nil")
+		}
+
+	}
+
+	if q.queryType == QueryRange {
+		if len(q.rangeCriteria) == 0 || len(q.rangeCriteria) > 2 {
+			return errors.New("range condition error,condition count must be 1 or 2")
+		}
+
+		var minValue, maxValue []byte
+		var err error
+		for _, v := range q.rangeCriteria {
+			if v.value == nil {
+				return errors.New("range Criteria value is nil")
+			}
+
+			switch v.op {
+			case OpGe, OpGt:
+				minValue, err = DefaultEncode(v.value)
+				if err != nil {
+					return err
+				}
+			case OpLe, OpLt:
+				maxValue, err = DefaultEncode(v.value)
+				if err != nil {
+					return err
+				}
+			}
+
+		}
+
+		if minValue != nil && maxValue != nil {
+			if bytes.Compare(minValue, maxValue) > 0 {
+				return errors.New("range Criteria value range error")
+			}
+		}
+
+	}
+
+	if q.limit < 0 {
+		return errors.New("limit error")
+	}
+
+	if q.offset < 0 {
+		return errors.New("limit offset")
+	}
 
 	return nil
 }
@@ -120,7 +180,7 @@ func (s *Store) findOneQuery(source BucketSource, result interface{}, query *Que
 }
 
 func (s *Store) updateQuery(source BucketSource, dataType interface{}, query *Query, update func(record interface{}) error) error {
-	err := query.check()
+	err := checkQuery(query)
 	if err != nil {
 		return err
 	}
@@ -172,7 +232,7 @@ func (s *Store) updateQuery(source BucketSource, dataType interface{}, query *Qu
 }
 
 func (s *Store) deleteQuery(source BucketSource, dataType interface{}, query *Query) error {
-	err := query.check()
+	err := checkQuery(query)
 	if err != nil {
 		return err
 	}
@@ -209,17 +269,18 @@ func (s *Store) deleteQuery(source BucketSource, dataType interface{}, query *Qu
 }
 
 func (s *Store) countQuery(source BucketSource, dataType interface{}, query *Query) (int, error) {
-	err := query.check()
+	err := checkQuery(query)
 	if err != nil {
 		return 0, err
 	}
 
-	query.limit = 0
-	query.offset = 0
+	fixedQuery := *query
+	fixedQuery.limit = 0
+	fixedQuery.offset = 0
 	//check result type
 	count := 0
 	//run query
-	err = s.runQuery(source, dataType, reflect.TypeOf(dataType), query, func(keys keyList, tp reflect.Type, bkt *bolt.Bucket) error {
+	err = s.runQuery(source, dataType, reflect.TypeOf(dataType), &fixedQuery, func(keys keyList, tp reflect.Type, bkt *bolt.Bucket) error {
 		count = len(keys)
 		return nil
 	})
@@ -231,7 +292,7 @@ func (s *Store) countQuery(source BucketSource, dataType interface{}, query *Que
 }
 
 func (s *Store) findQuery(source BucketSource, result interface{}, query *Query) error {
-	err := query.check()
+	err := checkQuery(query)
 	if err != nil {
 		return err
 	}
@@ -252,6 +313,19 @@ func (s *Store) findQuery(source BucketSource, result interface{}, query *Query)
 	for tp.Kind() == reflect.Ptr {
 		tp = tp.Elem()
 	}
+
+	//for autofill KeyField in struct
+	var keyType reflect.Type
+	var keyField string
+
+	for i := 0; i < tp.NumField(); i++ {
+		if strings.Contains(string(tp.Field(i).Tag), BoltholdKeyTag) {
+			keyType = tp.Field(i).Type
+			keyField = tp.Field(i).Name
+			break
+		}
+	}
+
 	val := reflect.New(tp)
 
 	dataType := val.Interface()
@@ -266,8 +340,20 @@ func (s *Store) findQuery(source BucketSource, result interface{}, query *Query)
 			if err != nil {
 				return err
 			}
+			rowValue := val.Elem()
 
-			sliceVal = reflect.Append(sliceVal, val.Elem())
+			if keyType != nil {
+				rowKey := rowValue
+				for rowKey.Kind() == reflect.Ptr {
+					rowKey = rowKey.Elem()
+				}
+				err := s.decode(k, rowKey.FieldByName(keyField).Addr().Interface())
+				if err != nil {
+					return err
+				}
+			}
+
+			sliceVal = reflect.Append(sliceVal, rowValue)
 		}
 		resultVal.Elem().Set(sliceVal.Slice(0, sliceVal.Len()))
 		return nil
@@ -381,7 +467,9 @@ func (s *Store) runQuery(source BucketSource, dataType interface{}, tp reflect.T
 					return c.First()
 				}
 				forCondition = func(k []byte) bool {
-
+					if k == nil {
+						return false
+					}
 					return bytes.Compare(k, value) <= 0
 				}
 			}
@@ -411,7 +499,9 @@ func (s *Store) runQuery(source BucketSource, dataType interface{}, tp reflect.T
 					return c.First()
 				}
 				forCondition = func(k []byte) bool {
-
+					if k == nil {
+						return false
+					}
 					return bytes.Compare(k, value) < 0
 				}
 			}
@@ -503,6 +593,9 @@ func (s *Store) runQuery(source BucketSource, dataType interface{}, tp reflect.T
 						}
 					}
 					forCondition = func(k []byte) bool {
+						if k == nil {
+							return false
+						}
 
 						return bytes.Compare(k, value) <= 0
 					}
@@ -537,7 +630,9 @@ func (s *Store) runQuery(source BucketSource, dataType interface{}, tp reflect.T
 						}
 					}
 					forCondition = func(k []byte) bool {
-
+						if k == nil {
+							return false
+						}
 						return bytes.Compare(k, value) < 0
 					}
 				}
