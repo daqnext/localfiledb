@@ -122,7 +122,7 @@ func (s *Store) updateIndex(typeName, indexName string, unique bool, indexKey []
 
 // IndexExists tests if an index exists for the passed in field name
 func (s *Store) IndexExists(source BucketSource, typeName, indexName string) bool {
-	return (source.Bucket(indexBucketName(typeName, indexName)) != nil)
+	return source.Bucket(indexBucketName(typeName, indexName)) != nil
 }
 
 // indexBucketName returns the name of the bolt bucket where this index is stored
@@ -172,7 +172,7 @@ func (v *keyList) in(key []byte) bool {
 		return bytes.Compare((*v)[i], key) >= 0
 	})
 
-	return (i < len(*v) && bytes.Equal((*v)[i], key))
+	return i < len(*v) && bytes.Equal((*v)[i], key)
 }
 
 // seekCursor attempts to save reads by seeking the cursor past values it doesn't need to compare since keys

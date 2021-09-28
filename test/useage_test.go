@@ -28,6 +28,7 @@ type FileInfoWithIndex struct {
 func Test_singleInsert(t *testing.T) {
 	os.Remove("test.db")
 	var err error
+
 	store, err = mesondb.Open("test.db", 0666, nil)
 	if err != nil {
 		log.Println("bolthold can't open")
@@ -44,6 +45,39 @@ func Test_singleInsert(t *testing.T) {
 	err = store.Insert("2", fileInfo)
 	if err != nil {
 		log.Println(err)
+	}
+}
+
+func Test_uniqueIndexInsert(t *testing.T) {
+	os.Remove("test.db")
+	var err error
+	store, err = mesondb.Open("test.db", 0666, nil)
+	if err != nil {
+		log.Println("bolthold can't open")
+	}
+	defer store.Close()
+
+	type SomeStruct struct {
+		Name string `boltholdIndex:"Name"`
+		No   uint64 `boltholdUnique:"No"`
+	}
+
+	s := []SomeStruct{
+		{"aaa", 1},
+		{"bbb", 2},
+		{"ccc", 1},
+	}
+	for i, v := range s {
+		err := store.Insert(i, v)
+		if err != nil {
+			log.Println("insert index ", i, "err", err)
+		}
+	}
+
+	var ss []SomeStruct
+	store.FindOne(&ss, nil)
+	for _, v := range ss {
+		log.Println(v)
 	}
 }
 
@@ -97,41 +131,72 @@ func Test_singleGetByKey(t *testing.T) {
 	log.Println(info2)
 }
 
+////Equal
+//mesondb.NewQuery("indexFieldName").Equal(someValue).Limit(10).Offset(10)
+////Range
+//mesondb.NewQuery("indexFieldName").Range(mesondb.Condition(mesondb.OpGe,someValue),mesondb.Condition(mesondb.OpLe,someValue))
+////Offset Limit Exclude Desc Asc
+//mesondb.NewQuery("indexFieldName").Range(mesondb.Condition(mesondb.OpGe,someValue)).Limit(10).Offset(10).Exclude(v1,v2,..).Desc()
+////if you do not define the Range, it will scan all index value
+//mesondb.NewQuery("indexFieldName").Limit(10).Offset(10).Exclude(v1,v2,..).Desc()
+////Use indexField "mesondb.Key" to query the Key. It also can use Range query if the Key is sortable
+//mesondb.NewQuery(mesondb.Key).Range(mesondb.Condition(mesondb.OpGe,someValue))
+////Operator
+////mesondb.OpGt ">"
+////mesondb.OpGe ">="
+////mesondb.OpLt "<"
+////mesondb.OpLe "<="
+
 func Test_queryGet(t *testing.T) {
 	Test_batchInsert(t)
 
-	//log.Println("query by primary key")
-	//var infos []FileInfoWithIndex
-	//q:=mesondb.NewQuery(mesondb.Key).Range(mesondb.Condition(mesondb.OpGe,"10"),mesondb.Condition(mesondb.OpLe,"20"))
-	//err:=store.Find(&infos,q)
-	//if err != nil {
-	//	log.Println(err)
-	//}
-	//for _,v:=range infos{
-	//	log.Println(v)
-	//}
+	var q *mesondb.Query
+	var err error
 
-	//log.Println("query by some index")
-	//var infos2 []FileInfoWithIndex
-	//q:=mesondb.NewQuery("LastAccessTime").Range(mesondb.Condition(mesondb.OpGe,int64(-20)),mesondb.Condition(mesondb.OpLe,int64(20)))
-	//err:=store.Find(&infos2,q)
-	//if err != nil {
-	//	log.Println(err)
-	//}
-	//for _,v:=range infos2{
-	//	log.Println(v)
-	//}
+	log.Println("query by primary key")
+	var infos []FileInfoWithIndex
+	q = mesondb.NewQuery(mesondb.Key).Range(mesondb.Condition(mesondb.OpGe, "10"), mesondb.Condition(mesondb.OpLe, "20"))
+	err = store.Find(&infos, q)
+	if err != nil {
+		log.Println(err)
+	}
+	for _, v := range infos {
+		log.Println(v)
+	}
+
+	log.Println("query by some index")
+	var infos2 []FileInfoWithIndex
+	q = mesondb.NewQuery("LastAccessTime").Range(mesondb.Condition(mesondb.OpGe, int64(-20)), mesondb.Condition(mesondb.OpLe, int64(20)))
+	err = store.Find(&infos2, q)
+	if err != nil {
+		log.Println(err)
+	}
+	for _, v := range infos2 {
+		log.Println(v)
+	}
 
 	log.Println("query by some index")
 	var infos3 []FileInfoWithIndex
-	q := mesondb.NewQuery("Rate").Range(mesondb.Condition(mesondb.OpGe, float64(-20)), mesondb.Condition(mesondb.OpLe, float64(20)))
-	err := store.Find(&infos3, q)
+	q = mesondb.NewQuery("Rate").Range(mesondb.Condition(mesondb.OpGe, float64(-20)), mesondb.Condition(mesondb.OpLe, float64(20)))
+	err = store.Find(&infos3, q)
 	if err != nil {
 		log.Println(err)
 	}
 	for _, v := range infos3 {
 		log.Println(v)
 	}
+
+	log.Println("query by some index without range")
+	var infos4 []FileInfoWithIndex
+	q = mesondb.NewQuery("Rate").Offset(10).Limit(10)
+	err = store.Find(&infos4, q)
+	if err != nil {
+		log.Println(err)
+	}
+	for _, v := range infos4 {
+		log.Println(v)
+	}
+
 }
 
 func Test_updateQuery(t *testing.T) {

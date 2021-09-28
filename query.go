@@ -12,7 +12,7 @@ import (
 type Operator int
 
 const (
-	OpEq Operator = iota
+	opEq Operator = iota
 	OpGt
 	OpGe
 	OpLt
@@ -65,7 +65,7 @@ func (q *Query) Range(c ...*Criterion) *Query {
 
 func (q *Query) Equal(value interface{}) *Query {
 	q.queryType = QueryEqual
-	q.equalCriteria = &Criterion{OpEq, value}
+	q.equalCriteria = &Criterion{opEq, value}
 	return q
 }
 
@@ -102,33 +102,39 @@ func (q *Query) Desc() *Query {
 	return q
 }
 
-func checkQuery(q *Query) error {
-	if q == nil {
-		return errors.New("nil query condition")
+func checkQuery(q **Query) error {
+	if *q == nil {
+		*q = &Query{}
+		//return errors.New("nil query condition")
 	}
-	if q.queryType != QueryEqual && q.queryType != QueryRange {
+
+	if (*q).queryType == 0 {
+		(*q).queryType = QueryRange
+	}
+
+	if (*q).queryType != QueryEqual && (*q).queryType != QueryRange {
 		return errors.New("query type error, only Range or Equal supported")
 	}
 
-	if q.queryType == QueryEqual {
-		if q.equalCriteria == nil {
+	if (*q).queryType == QueryEqual {
+		if (*q).equalCriteria == nil {
 			return errors.New("equal Criteria is nil")
 		}
 
-		if q.equalCriteria.value == nil {
+		if (*q).equalCriteria.value == nil {
 			return errors.New("equal Criteria value is nil")
 		}
 
 	}
 
-	if q.queryType == QueryRange {
-		if len(q.rangeCriteria) == 0 || len(q.rangeCriteria) > 2 {
-			return errors.New("range condition error,condition count must be 1 or 2")
+	if (*q).queryType == QueryRange {
+		if len((*q).rangeCriteria) > 2 {
+			return errors.New("range condition error,max condition count is 2")
 		}
 
 		var minValue, maxValue []byte
 		var err error
-		for _, v := range q.rangeCriteria {
+		for _, v := range (*q).rangeCriteria {
 			if v.value == nil {
 				return errors.New("range Criteria value is nil")
 			}
@@ -156,12 +162,12 @@ func checkQuery(q *Query) error {
 
 	}
 
-	if q.limit < 0 {
+	if (*q).limit < 0 {
 		return errors.New("limit error")
 	}
 
-	if q.offset < 0 {
-		return errors.New("limit offset")
+	if (*q).offset < 0 {
+		return errors.New("offset error")
 	}
 
 	return nil
@@ -175,12 +181,17 @@ func Condition(op Operator, value interface{}) *Criterion {
 }
 
 func (s *Store) findOneQuery(source BucketSource, result interface{}, query *Query) error {
+	if query == nil {
+		query = &Query{}
+		query.queryType = QueryRange
+		//return errors.New("nil query condition")
+	}
 	query.Limit(1)
 	return s.findQuery(source, result, query)
 }
 
 func (s *Store) updateQuery(source BucketSource, dataType interface{}, query *Query, update func(record interface{}) error) error {
-	err := checkQuery(query)
+	err := checkQuery(&query)
 	if err != nil {
 		return err
 	}
@@ -232,7 +243,7 @@ func (s *Store) updateQuery(source BucketSource, dataType interface{}, query *Qu
 }
 
 func (s *Store) deleteQuery(source BucketSource, dataType interface{}, query *Query) error {
-	err := checkQuery(query)
+	err := checkQuery(&query)
 	if err != nil {
 		return err
 	}
@@ -269,7 +280,7 @@ func (s *Store) deleteQuery(source BucketSource, dataType interface{}, query *Qu
 }
 
 func (s *Store) countQuery(source BucketSource, dataType interface{}, query *Query) (int, error) {
-	err := checkQuery(query)
+	err := checkQuery(&query)
 	if err != nil {
 		return 0, err
 	}
@@ -292,7 +303,7 @@ func (s *Store) countQuery(source BucketSource, dataType interface{}, query *Que
 }
 
 func (s *Store) findQuery(source BucketSource, result interface{}, query *Query) error {
-	err := checkQuery(query)
+	err := checkQuery(&query)
 	if err != nil {
 		return err
 	}
@@ -363,163 +374,65 @@ func (s *Store) findQuery(source BucketSource, result interface{}, query *Query)
 func (s *Store) runQuery(source BucketSource, dataType interface{}, tp reflect.Type, query *Query, action func(keys keyList, tp reflect.Type, bkt *bolt.Bucket) error) error {
 	//run query
 	storer := s.newStorer(dataType)
-	bkt := source.Bucket([]byte(storer.Type()))
-	if bkt == nil {
+	mainBkt := source.Bucket([]byte(storer.Type()))
+	if mainBkt == nil {
 		// if the bucket doesn't exist or is empty then our job is really easy!
 		return nil
 	}
 
 	isQueryPrimaryKey := false
-	var indexBkt *bolt.Bucket
+	var queryBkt *bolt.Bucket
 	if query.index == "" {
-		indexBkt = bkt
+		queryBkt = mainBkt
 		isQueryPrimaryKey = true
 	} else {
-		indexBkt = source.Bucket(indexBucketName(storer.Type(), query.index))
+		queryBkt = source.Bucket(indexBucketName(storer.Type(), query.index))
 	}
-	if query.index != "" && indexBkt == nil {
-		return fmt.Errorf("The index [%s] does not exist", query.index)
+	if query.index != "" && queryBkt == nil {
+		return fmt.Errorf("index [%s] does not exist", query.index)
 	}
 
-	c := indexBkt.Cursor()
+	c := queryBkt.Cursor()
 	var keys = make(keyList, 0)
 
 	switch query.queryType {
 	case QueryRange:
-		if len(query.rangeCriteria) == 0 || len(query.rangeCriteria) > 2 {
-			return errors.New("range condition error,condition count must be 1 or 2")
+		if len(query.rangeCriteria) > 2 {
+			return errors.New("range condition error,max condition count is 2")
 		}
 
 		var forStart func(c *bolt.Cursor) ([]byte, []byte)
 		var forCondition func(k []byte) bool
 		var forNext func(c *bolt.Cursor) ([]byte, []byte)
 
-		switch query.rangeCriteria[0].op {
-		case OpGe:
-			seekMin, err := s.encode(query.rangeCriteria[0].value)
-			if err != nil {
-				return fmt.Errorf("query value encode err:", err.Error())
-			}
-
+		if len(query.rangeCriteria) == 0 {
 			if query.reverse {
 				forStart = func(c *bolt.Cursor) ([]byte, []byte) {
 					return c.Last()
 				}
 				forCondition = func(k []byte) bool {
-					return bytes.Compare(k, seekMin) >= 0
-				}
-			} else {
-				forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-					return c.Seek(seekMin)
-				}
-				forCondition = func(k []byte) bool {
 					return k != nil
 				}
-			}
-
-		case OpGt:
-			seekMin, err := s.encode(query.rangeCriteria[0].value)
-			if err != nil {
-				return fmt.Errorf("query value encode err:", err.Error())
-			}
-
-			if query.reverse {
-				forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-					return c.Last()
-				}
-				forCondition = func(k []byte) bool {
-					return bytes.Compare(k, seekMin) > 0
-				}
-			} else {
-				forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-					k, v := c.Seek(seekMin)
-					if bytes.Compare(k, seekMin) == 0 {
-						return c.Next()
-					}
-					return k, v
-				}
-				forCondition = func(k []byte) bool {
-					return k != nil
-				}
-			}
-		case OpLe:
-			value, err := s.encode(query.rangeCriteria[0].value)
-			if err != nil {
-				return fmt.Errorf("query value encode err:", err.Error())
-			}
-			if query.reverse {
-				forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-
-					k, v := c.Seek(value)
-					if bytes.Compare(k, value) > 0 {
-						k, v = c.Prev()
-					}
-
-					return k, v
-
-				}
-				forCondition = func(k []byte) bool {
-					return k != nil
-				}
-
 			} else {
 				forStart = func(c *bolt.Cursor) ([]byte, []byte) {
 					return c.First()
 				}
 				forCondition = func(k []byte) bool {
-					if k == nil {
-						return false
-					}
-					return bytes.Compare(k, value) <= 0
-				}
-			}
-
-		case OpLt:
-			value, err := s.encode(query.rangeCriteria[0].value)
-			if err != nil {
-				return fmt.Errorf("query value encode err:", err.Error())
-			}
-			if query.reverse {
-				forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-
-					k, v := c.Seek(value)
-					if bytes.Compare(k, value) >= 0 {
-						k, v = c.Prev()
-					}
-
-					return k, v
-
-				}
-				forCondition = func(k []byte) bool {
 					return k != nil
 				}
-
-			} else {
-				forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-					return c.First()
-				}
-				forCondition = func(k []byte) bool {
-					if k == nil {
-						return false
-					}
-					return bytes.Compare(k, value) < 0
-				}
 			}
-		}
+		} else {
 
-		if len(query.rangeCriteria) == 2 {
-			switch query.rangeCriteria[1].op {
+			switch query.rangeCriteria[0].op {
 			case OpGe:
-				seekMin, err := s.encode(query.rangeCriteria[1].value)
+				seekMin, err := s.encode(query.rangeCriteria[0].value)
 				if err != nil {
-					return fmt.Errorf("query value encode err:", err.Error())
+					return fmt.Errorf("query value encode err:%s", err.Error())
 				}
 
 				if query.reverse {
-					if forStart == nil {
-						forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-							return c.Last()
-						}
+					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+						return c.Last()
 					}
 					forCondition = func(k []byte) bool {
 						return bytes.Compare(k, seekMin) >= 0
@@ -528,24 +441,20 @@ func (s *Store) runQuery(source BucketSource, dataType interface{}, tp reflect.T
 					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
 						return c.Seek(seekMin)
 					}
-					if forCondition == nil {
-						forCondition = func(k []byte) bool {
-							return k != nil
-						}
+					forCondition = func(k []byte) bool {
+						return k != nil
 					}
 				}
 
 			case OpGt:
-				seekMin, err := s.encode(query.rangeCriteria[1].value)
+				seekMin, err := s.encode(query.rangeCriteria[0].value)
 				if err != nil {
-					return fmt.Errorf("query value encode err:", err.Error())
+					return fmt.Errorf("query value encode err:%s", err.Error())
 				}
 
 				if query.reverse {
-					if forStart == nil {
-						forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-							return c.Last()
-						}
+					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+						return c.Last()
 					}
 					forCondition = func(k []byte) bool {
 						return bytes.Compare(k, seekMin) > 0
@@ -558,17 +467,14 @@ func (s *Store) runQuery(source BucketSource, dataType interface{}, tp reflect.T
 						}
 						return k, v
 					}
-					if forCondition == nil {
-						forCondition = func(k []byte) bool {
-							return k != nil
-						}
+					forCondition = func(k []byte) bool {
+						return k != nil
 					}
 				}
-
 			case OpLe:
-				value, err := s.encode(query.rangeCriteria[1].value)
+				value, err := s.encode(query.rangeCriteria[0].value)
 				if err != nil {
-					return fmt.Errorf("query value encode err:", err.Error())
+					return fmt.Errorf("query value encode err:%s", err.Error())
 				}
 				if query.reverse {
 					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
@@ -581,32 +487,27 @@ func (s *Store) runQuery(source BucketSource, dataType interface{}, tp reflect.T
 						return k, v
 
 					}
-					if forCondition == nil {
-						forCondition = func(k []byte) bool {
-							return k != nil
-						}
+					forCondition = func(k []byte) bool {
+						return k != nil
 					}
+
 				} else {
-					if forStart == nil {
-						forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-							return c.First()
-						}
+					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+						return c.First()
 					}
 					forCondition = func(k []byte) bool {
 						if k == nil {
 							return false
 						}
-
 						return bytes.Compare(k, value) <= 0
 					}
 				}
 
 			case OpLt:
-				value, err := s.encode(query.rangeCriteria[1].value)
+				value, err := s.encode(query.rangeCriteria[0].value)
 				if err != nil {
-					return fmt.Errorf("query value encode err:", err.Error())
+					return fmt.Errorf("query value encode err:%s", err.Error())
 				}
-
 				if query.reverse {
 					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
 
@@ -618,16 +519,13 @@ func (s *Store) runQuery(source BucketSource, dataType interface{}, tp reflect.T
 						return k, v
 
 					}
-					if forCondition == nil {
-						forCondition = func(k []byte) bool {
-							return k != nil
-						}
+					forCondition = func(k []byte) bool {
+						return k != nil
 					}
+
 				} else {
-					if forStart == nil {
-						forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-							return c.First()
-						}
+					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+						return c.First()
 					}
 					forCondition = func(k []byte) bool {
 						if k == nil {
@@ -636,7 +534,139 @@ func (s *Store) runQuery(source BucketSource, dataType interface{}, tp reflect.T
 						return bytes.Compare(k, value) < 0
 					}
 				}
+			}
 
+			if len(query.rangeCriteria) == 2 {
+				switch query.rangeCriteria[1].op {
+				case OpGe:
+					seekMin, err := s.encode(query.rangeCriteria[1].value)
+					if err != nil {
+						return fmt.Errorf("query value encode err:%s", err.Error())
+					}
+
+					if query.reverse {
+						if forStart == nil {
+							forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+								return c.Last()
+							}
+						}
+						forCondition = func(k []byte) bool {
+							return bytes.Compare(k, seekMin) >= 0
+						}
+					} else {
+						forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+							return c.Seek(seekMin)
+						}
+						if forCondition == nil {
+							forCondition = func(k []byte) bool {
+								return k != nil
+							}
+						}
+					}
+
+				case OpGt:
+					seekMin, err := s.encode(query.rangeCriteria[1].value)
+					if err != nil {
+						return fmt.Errorf("query value encode err:%s", err.Error())
+					}
+
+					if query.reverse {
+						if forStart == nil {
+							forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+								return c.Last()
+							}
+						}
+						forCondition = func(k []byte) bool {
+							return bytes.Compare(k, seekMin) > 0
+						}
+					} else {
+						forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+							k, v := c.Seek(seekMin)
+							if bytes.Compare(k, seekMin) == 0 {
+								return c.Next()
+							}
+							return k, v
+						}
+						if forCondition == nil {
+							forCondition = func(k []byte) bool {
+								return k != nil
+							}
+						}
+					}
+
+				case OpLe:
+					value, err := s.encode(query.rangeCriteria[1].value)
+					if err != nil {
+						return fmt.Errorf("query value encode err:%s", err.Error())
+					}
+					if query.reverse {
+						forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+
+							k, v := c.Seek(value)
+							if bytes.Compare(k, value) > 0 {
+								k, v = c.Prev()
+							}
+
+							return k, v
+
+						}
+						if forCondition == nil {
+							forCondition = func(k []byte) bool {
+								return k != nil
+							}
+						}
+					} else {
+						if forStart == nil {
+							forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+								return c.First()
+							}
+						}
+						forCondition = func(k []byte) bool {
+							if k == nil {
+								return false
+							}
+
+							return bytes.Compare(k, value) <= 0
+						}
+					}
+
+				case OpLt:
+					value, err := s.encode(query.rangeCriteria[1].value)
+					if err != nil {
+						return fmt.Errorf("query value encode err:%s", err.Error())
+					}
+
+					if query.reverse {
+						forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+
+							k, v := c.Seek(value)
+							if bytes.Compare(k, value) >= 0 {
+								k, v = c.Prev()
+							}
+
+							return k, v
+
+						}
+						if forCondition == nil {
+							forCondition = func(k []byte) bool {
+								return k != nil
+							}
+						}
+					} else {
+						if forStart == nil {
+							forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+								return c.First()
+							}
+						}
+						forCondition = func(k []byte) bool {
+							if k == nil {
+								return false
+							}
+							return bytes.Compare(k, value) < 0
+						}
+					}
+
+				}
 			}
 		}
 
@@ -711,7 +741,7 @@ func (s *Store) runQuery(source BucketSource, dataType interface{}, tp reflect.T
 	case QueryEqual:
 		seek, err := s.encode(query.equalCriteria.value)
 		if err != nil {
-			return fmt.Errorf("query value encode err:", err.Error())
+			return fmt.Errorf("query value encode err:%s", err.Error())
 		}
 
 		key, v := c.Seek(seek)
@@ -748,5 +778,5 @@ func (s *Store) runQuery(source BucketSource, dataType interface{}, tp reflect.T
 
 	}
 
-	return action(keys, tp, bkt)
+	return action(keys, tp, mainBkt)
 }
