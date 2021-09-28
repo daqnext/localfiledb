@@ -85,14 +85,14 @@ func (s *Store) ReIndex(exampleType interface{}, bucketName []byte) error {
 			}
 		}
 
-		sliceIndexes := storer.SliceIndexes()
-
-		for indexName := range sliceIndexes {
-			err := tx.DeleteBucket(indexBucketName(storer.Type(), indexName))
-			if err != nil && err != bolt.ErrBucketNotFound {
-				return err
-			}
-		}
+		//sliceIndexes := storer.SliceIndexes()
+		//
+		//for indexName := range sliceIndexes {
+		//	err := tx.DeleteBucket(indexBucketName(storer.Type(), indexName))
+		//	if err != nil && err != bolt.ErrBucketNotFound {
+		//		return err
+		//	}
+		//}
 
 		copyData := true
 
@@ -146,16 +146,16 @@ func (s *Store) RemoveIndex(dataType interface{}, indexName string) error {
 
 // Storer is the Interface to implement to skip reflect calls on all data passed into the bolthold
 type Storer interface {
-	Type() string                        // used as the boltdb bucket name
-	Indexes() map[string]Index           // [indexname]indexFunc
-	SliceIndexes() map[string]SliceIndex // [indexname]sliceIndexFunc
+	Type() string              // used as the boltdb bucket name
+	Indexes() map[string]Index // [indexname]indexFunc
+	//SliceIndexes() map[string]SliceIndex // [indexname]sliceIndexFunc
 }
 
 // anonType is created from a reflection of an unknown interface. This is the default storer used
 type anonStorer struct {
-	rType        reflect.Type
-	indexes      map[string]Index
-	sliceIndexes map[string]SliceIndex
+	rType   reflect.Type
+	indexes map[string]Index
+	//sliceIndexes map[string]SliceIndex
 }
 
 // Type returns the name of the type as determined from the reflect package
@@ -169,9 +169,9 @@ func (t *anonStorer) Indexes() map[string]Index {
 }
 
 // SliceIndexes returns the Indexes determined by the reflect package on this type
-func (t *anonStorer) SliceIndexes() map[string]SliceIndex {
-	return t.sliceIndexes
-}
+//func (t *anonStorer) SliceIndexes() map[string]SliceIndex {
+//	return t.sliceIndexes
+//}
 
 // newStorer creates a type which satisfies the Storer interface based on reflection of the passed in dataType
 // if the Type doesn't meet the requirements of a Storer (i.e. doesn't have a name) it panics
@@ -190,9 +190,9 @@ func (s *Store) newStorer(dataType interface{}) Storer {
 	}
 
 	storer := &anonStorer{
-		rType:        tp,
-		indexes:      make(map[string]Index),
-		sliceIndexes: make(map[string]SliceIndex),
+		rType:   tp,
+		indexes: make(map[string]Index),
+		//sliceIndexes: make(map[string]SliceIndex),
 	}
 
 	if storer.rType.Name() == "" {

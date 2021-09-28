@@ -47,12 +47,12 @@ func (s *Store) TxInsert(tx *bolt.Tx, key, data interface{}) error {
 }
 
 // InsertIntoBucket is the same as Insert except it allows you specify your own parent bucket
-func (s *Store) InsertIntoBucket(parent *bolt.Bucket, key, data interface{}) error {
-	if !parent.Tx().Writable() {
-		return bolt.ErrTxNotWritable
-	}
-	return s.insert(parent, key, data)
-}
+//func (s *Store) InsertIntoBucket(parent *bolt.Bucket, key, data interface{}) error {
+//	if !parent.Tx().Writable() {
+//		return bolt.ErrTxNotWritable
+//	}
+//	return s.insert(parent, key, data)
+//}
 
 func (s *Store) insert(source BucketSource, key, data interface{}) error {
 	storer := s.newStorer(data)
@@ -144,13 +144,13 @@ func (s *Store) TxUpdate(tx *bolt.Tx, key interface{}, data interface{}) error {
 }
 
 // UpdateBucket allows you to run an update against any parent bucket
-func (s *Store) UpdateBucket(parent *bolt.Bucket, key interface{}, data interface{}) error {
-	if !parent.Tx().Writable() {
-		return bolt.ErrTxNotWritable
-	}
-	return s.update(parent, key, data)
-
-}
+//func (s *Store) UpdateBucket(parent *bolt.Bucket, key interface{}, data interface{}) error {
+//	if !parent.Tx().Writable() {
+//		return bolt.ErrTxNotWritable
+//	}
+//	return s.update(parent, key, data)
+//
+//}
 
 func (s *Store) update(source BucketSource, key interface{}, data interface{}) error {
 	storer := s.newStorer(data)
@@ -217,12 +217,12 @@ func (s *Store) TxUpsert(tx *bolt.Tx, key interface{}, data interface{}) error {
 }
 
 // UpsertBucket allows you to run an upsert against any bucket parent
-func (s *Store) UpsertBucket(parent *bolt.Bucket, key interface{}, data interface{}) error {
-	if !parent.Tx().Writable() {
-		return bolt.ErrTxNotWritable
-	}
-	return s.upsert(parent, key, data)
-}
+//func (s *Store) UpsertBucket(parent *bolt.Bucket, key interface{}, data interface{}) error {
+//	if !parent.Tx().Writable() {
+//		return bolt.ErrTxNotWritable
+//	}
+//	return s.upsert(parent, key, data)
+//}
 
 func (s *Store) upsert(source BucketSource, key interface{}, data interface{}) error {
 	storer := s.newStorer(data)
@@ -285,7 +285,7 @@ func (s *Store) TxUpdateMatching(tx *bolt.Tx, dataType interface{}, query *Query
 }
 
 // UpdateMatchingInBucket does the same as UpdateMatching, but allows you to specify your own parent bucket
-func (s *Store) UpdateMatchingInBucket(parent *bolt.Bucket, dataType interface{}, query *Query,
-	update func(record interface{}) error) error {
-	return s.updateQuery(parent, dataType, query, update)
-}
+//func (s *Store) UpdateMatchingInBucket(parent *bolt.Bucket, dataType interface{}, query *Query,
+//	update func(record interface{}) error) error {
+//	return s.updateQuery(parent, dataType, query, update)
+//}

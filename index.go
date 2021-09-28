@@ -3,8 +3,6 @@ package meson_bolt_localdb
 import (
 	"bytes"
 	"sort"
-
-	bolt "go.etcd.io/bbolt"
 )
 
 // BoltholdIndexTag is the struct tag used to define a field as indexable for a bolthold
@@ -58,23 +56,23 @@ func (s *Store) updateIndexes(storer Storer, source BucketSource, key []byte, da
 		}
 	}
 
-	sliceIndexes := storer.SliceIndexes()
-	for name, index := range sliceIndexes {
-		indexKeys, err := index(name, data)
-		if err != nil {
-			return err
-		}
-
-		for i := range indexKeys {
-			if indexKeys[i] == nil {
-				continue
-			}
-			err = s.updateIndex(storer.Type(), name, false, indexKeys[i], source, key, delete)
-			if err != nil {
-				return err
-			}
-		}
-	}
+	//sliceIndexes := storer.SliceIndexes()
+	//for name, index := range sliceIndexes {
+	//	indexKeys, err := index(name, data)
+	//	if err != nil {
+	//		return err
+	//	}
+	//
+	//	for i := range indexKeys {
+	//		if indexKeys[i] == nil {
+	//			continue
+	//		}
+	//		err = s.updateIndex(storer.Type(), name, false, indexKeys[i], source, key, delete)
+	//		if err != nil {
+	//			return err
+	//		}
+	//	}
+	//}
 
 	return nil
 }
@@ -198,14 +196,14 @@ func (v *keyList) in(key []byte) bool {
 //	return cursor.First()
 //}
 
-type iterator struct {
-	keyCache    [][]byte
-	dataBucket  *bolt.Bucket
-	indexCursor *bolt.Cursor
-	nextKeys    func(bool, *bolt.Cursor) ([][]byte, error)
-	prepCursor  bool
-	err         error
-}
+//type iterator struct {
+//	keyCache    [][]byte
+//	dataBucket  *bolt.Bucket
+//	indexCursor *bolt.Cursor
+//	nextKeys    func(bool, *bolt.Cursor) ([][]byte, error)
+//	prepCursor  bool
+//	err         error
+//}
 
 //func (s *Store) newIterator(source BucketSource, typeName string, query *Query) *iterator {
 //
@@ -366,43 +364,43 @@ type iterator struct {
 // Next returns the next key value that matches the iterators criteria
 // If no more kv's are available the return nil, if there is an error, they return nil
 // and iterator.Error() will return the error
-func (i *iterator) Next() (key []byte, value []byte) {
-	if i.err != nil {
-		return nil, nil
-	}
-
-	if i.dataBucket == nil {
-		return nil, nil
-	}
-
-	if i.nextKeys == nil {
-		return nil, nil
-	}
-
-	if len(i.keyCache) == 0 {
-		newKeys, err := i.nextKeys(i.prepCursor, i.indexCursor)
-		i.prepCursor = false
-		if err != nil {
-			i.err = err
-			return nil, nil
-		}
-
-		if len(newKeys) == 0 {
-			return nil, nil
-		}
-
-		i.keyCache = append(i.keyCache, newKeys...)
-	}
-
-	nextKey := i.keyCache[0]
-	i.keyCache = i.keyCache[1:]
-
-	val := i.dataBucket.Get(nextKey)
-
-	return nextKey, val
-}
+//func (i *iterator) Next() (key []byte, value []byte) {
+//	if i.err != nil {
+//		return nil, nil
+//	}
+//
+//	if i.dataBucket == nil {
+//		return nil, nil
+//	}
+//
+//	if i.nextKeys == nil {
+//		return nil, nil
+//	}
+//
+//	if len(i.keyCache) == 0 {
+//		newKeys, err := i.nextKeys(i.prepCursor, i.indexCursor)
+//		i.prepCursor = false
+//		if err != nil {
+//			i.err = err
+//			return nil, nil
+//		}
+//
+//		if len(newKeys) == 0 {
+//			return nil, nil
+//		}
+//
+//		i.keyCache = append(i.keyCache, newKeys...)
+//	}
+//
+//	nextKey := i.keyCache[0]
+//	i.keyCache = i.keyCache[1:]
+//
+//	val := i.dataBucket.Get(nextKey)
+//
+//	return nextKey, val
+//}
 
 // Error returns the last error, iterator.Next() will not continue if there is an error present
-func (i *iterator) Error() error {
-	return i.err
-}
+//func (i *iterator) Error() error {
+//	return i.err
+//}

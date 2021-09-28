@@ -21,12 +21,12 @@ func (s *Store) TxDelete(tx *bolt.Tx, key, dataType interface{}) error {
 }
 
 // DeleteFromBucket allows you to specify the parent bucket to delete from
-func (s *Store) DeleteFromBucket(parent *bolt.Bucket, key, dataType interface{}) error {
-	if !parent.Tx().Writable() {
-		return bolt.ErrTxNotWritable
-	}
-	return s.delete(parent, key, dataType)
-}
+//func (s *Store) DeleteFromBucket(parent *bolt.Bucket, key, dataType interface{}) error {
+//	if !parent.Tx().Writable() {
+//		return bolt.ErrTxNotWritable
+//	}
+//	return s.delete(parent, key, dataType)
+//}
 
 func (s *Store) delete(source BucketSource, key, dataType interface{}) error {
 	storer := s.newStorer(dataType)
@@ -77,6 +77,6 @@ func (s *Store) TxDeleteMatching(tx *bolt.Tx, dataType interface{}, query *Query
 }
 
 // DeleteMatchingFromBucket does the same as DeleteMatching, but allows you to specify your own parent bucket
-func (s *Store) DeleteMatchingFromBucket(parent *bolt.Bucket, dataType interface{}, query *Query) error {
-	return s.deleteQuery(parent, dataType, query)
-}
+//func (s *Store) DeleteMatchingFromBucket(parent *bolt.Bucket, dataType interface{}, query *Query) error {
+//	return s.deleteQuery(parent, dataType, query)
+//}
