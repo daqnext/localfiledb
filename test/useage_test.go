@@ -155,6 +155,7 @@ func Test_queryGet(t *testing.T) {
 
 	log.Println("query by primary key")
 	var infos []FileInfoWithIndex
+	//KeyQuery
 	q = mesondb.NewQuery(mesondb.Key).Range(mesondb.Condition(mesondb.OpGe, "10"), mesondb.Condition(mesondb.OpLe, "20"))
 	err = store.Find(&infos, q)
 	if err != nil {
@@ -166,6 +167,7 @@ func Test_queryGet(t *testing.T) {
 
 	log.Println("query by some index")
 	var infos2 []FileInfoWithIndex
+	//IndexQuery
 	q = mesondb.NewQuery("LastAccessTime").Range(mesondb.Condition(mesondb.OpGe, int64(-20)), mesondb.Condition(mesondb.OpLe, int64(20)))
 	err = store.Find(&infos2, q)
 	if err != nil {
@@ -317,5 +319,62 @@ func Test_checkIndexBucket(t *testing.T) {
 
 		return nil
 	})
+}
 
+func Test_useSimpleKeyValue(t *testing.T) {
+	var err error
+	store, err = mesondb.Open("test.db", 0666, nil)
+	if err != nil {
+		log.Println("bolthold can't open")
+	}
+
+	setV := map[string]int{}
+	setV["a"] = 1
+	setV["b"] = 2
+	setV["c"] = 3
+
+	store.Bolt().Update(func(tx *bbolt.Tx) error {
+		bkt, _ := tx.CreateBucketIfNotExists([]byte("kvbuckt"))
+
+		for k, v := range setV {
+			vb, err := mesondb.DefaultEncode(v)
+			if err != nil {
+				log.Println(err)
+			} else {
+				bkt.Put([]byte(k), vb)
+			}
+		}
+		return nil
+	})
+
+	store.Bolt().View(func(tx *bbolt.Tx) error {
+		bkt := tx.Bucket([]byte("kvbuckt"))
+		keys := []string{"a", "b", "c"}
+		for _, v := range keys {
+			v1 := bkt.Get([]byte(v))
+			var vv1 int
+			err := mesondb.DefaultDecode(v1, &vv1)
+			if err != nil {
+				log.Println(err)
+			} else {
+				log.Println("key", v, "value", vv1)
+			}
+		}
+		return nil
+	})
+}
+
+func Test_reindex(t *testing.T) {
+	var err error
+	store, err = mesondb.Open("test.db", 0666, nil)
+	if err != nil {
+		log.Println("bolthold can't open")
+	}
+
+	err = store.ReIndex(&FileInfoWithIndex{}, nil)
+	if err != nil {
+		log.Println(err)
+	}
+
+	store.RemoveIndex(&FileInfoWithIndex{}, "FileSize")
 }

@@ -41,7 +41,7 @@ op:=&mesondb.Options{
 }
 store, err = mesondb.Open("test.db", 0666,op)
 ```
-defalut Decoder and Encoder use "golang/gob" except int (int8 int16...) float32 and float64, number value use the encoder which result []byte is sortable
+defalut Decoder and Encoder use "golang/gob" except int (int8 int16...) float32 and float64, number value use the encoder which result []byte can be sorted correctly.
 
 ### Define struct
 ```go
@@ -159,6 +159,9 @@ mesondb.NewQuery(mesondb.Key).Range(mesondb.Condition(mesondb.OpGe,someValue))
 //mesondb.OpLt "<"
 //mesondb.OpLe "<="
 ```
+The Range query can not get the correct result if the index value is not sortable. Do not use Range query with unsortable index or key.
+
+Number and string are sortable with default Encoder.
 
 ```go
 //if the query is nil, it will get all the value
