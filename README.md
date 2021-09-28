@@ -1,6 +1,6 @@
 # meson-bolt-localdb
 
-It's a local file db based on [bblot](https://github.com/etcd-io/bbolt) && [BoltHold](https://github.com/timshannon/bolthold)
+It's a local file db based on [bblot](https://github.com/etcd-io/bbolt) & [BoltHold](https://github.com/timshannon/bolthold)
 
 ## How to use
 ```
@@ -41,7 +41,7 @@ op:=&mesondb.Options{
 }
 store, err = mesondb.Open("test.db", 0666,op)
 ```
-defalut Decoder and Encoder use "golang/gob" except int uint (int8 int16...) float32 and float64, number value use the encoder which result []byte is sortable
+defalut Decoder and Encoder use "golang/gob" except int (int8 int16...) float32 and float64, number value use the encoder which result []byte is sortable
 
 ### Define struct
 ```go
