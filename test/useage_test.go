@@ -151,51 +151,66 @@ func Test_queryGet(t *testing.T) {
 	Test_batchInsert(t)
 
 	var q *mesondb.Query
+	var qc *mesondb.RangeCondition
 	var err error
+	_ = qc
 
-	log.Println("query by primary key")
-	var infos []FileInfoWithIndex
+	//log.Println("query by primary key")
+	//var infos []FileInfoWithIndex
 	//KeyQuery
-	q = mesondb.NewQuery(mesondb.Key).Range(mesondb.Condition(mesondb.OpGe, "10"), mesondb.Condition(mesondb.OpLe, "20"))
-	err = store.Find(&infos, q)
-	if err != nil {
-		log.Println(err)
-	}
-	for _, v := range infos {
-		log.Println(v)
-	}
+	//qc = mesondb.VPair("10", true, "20", true).Or(mesondb.VPair("50", true, "70", true)).Or(mesondb.VPair("80", true, "90", true))
+	//qc = mesondb.VPair("10", true, nil, true).And(mesondb.VPair(nil, true, "30", true))
+	//q = mesondb.KeyQuery().Range(qc).Desc().Limit(10).Offset(10)
+	//err = store.Find(&infos, q)
+	//if err != nil {
+	//	log.Println(err)
+	//}
+	//for _, v := range infos {
+	//	log.Println(v)
+	//}
 
-	log.Println("query by some index")
-	var infos2 []FileInfoWithIndex
-	//IndexQuery
-	q = mesondb.NewQuery("LastAccessTime").Range(mesondb.Condition(mesondb.OpGe, int64(-20)), mesondb.Condition(mesondb.OpLe, int64(20)))
-	err = store.Find(&infos2, q)
-	if err != nil {
-		log.Println(err)
-	}
-	for _, v := range infos2 {
-		log.Println(v)
-	}
-
-	log.Println("query by some index")
-	var infos3 []FileInfoWithIndex
-	q = mesondb.NewQuery("Rate").Range(mesondb.Condition(mesondb.OpGe, float64(-20)), mesondb.Condition(mesondb.OpLe, float64(20)))
-	err = store.Find(&infos3, q)
-	if err != nil {
-		log.Println(err)
-	}
-	for _, v := range infos3 {
-		log.Println(v)
-	}
+	//log.Println("query by some index")
+	//var infos2 []FileInfoWithIndex
+	////IndexQuery
+	//q = mesondb.IndexQuery("LastAccessTime").Range(mesondb.VPair(int64(-20),true,int64(20),true))
+	//err = store.Find(&infos2, q)
+	//if err != nil {
+	//	log.Println(err)
+	//}
+	//for _, v := range infos2 {
+	//	log.Println(v)
+	//}
+	//
+	//log.Println("query by some index")
+	//var infos3 []FileInfoWithIndex
+	//q = mesondb.IndexQuery("Rate").Range(mesondb.VPair(float64(-20),true,float64(20),true))
+	//err = store.Find(&infos3, q)
+	//if err != nil {
+	//	log.Println(err)
+	//}
+	//for _, v := range infos3 {
+	//	log.Println(v)
+	//}
+	//
+	//log.Println("query by some index without range")
+	//var infos4 []FileInfoWithIndex
+	//q = mesondb.IndexQuery("Rate").Offset(10).Limit(10)
+	//err = store.Find(&infos4, q)
+	//if err != nil {
+	//	log.Println(err)
+	//}
+	//for _, v := range infos4 {
+	//	log.Println(v)
+	//}
 
 	log.Println("query by some index without range")
-	var infos4 []FileInfoWithIndex
-	q = mesondb.NewQuery("Rate").Offset(10).Limit(10)
-	err = store.Find(&infos4, q)
+	var infos5 []FileInfoWithIndex
+	q = mesondb.IndexQuery("LastAccessTime").Equal(int64(20))
+	err = store.Find(&infos5, q)
 	if err != nil {
 		log.Println(err)
 	}
-	for _, v := range infos4 {
+	for _, v := range infos5 {
 		log.Println(v)
 	}
 
@@ -205,7 +220,7 @@ func Test_updateQuery(t *testing.T) {
 	Test_batchInsert(t)
 
 	log.Println("update query")
-	q := mesondb.NewQuery("LastAccessTime").Range(mesondb.Condition(mesondb.OpGe, 10), mesondb.Condition(mesondb.OpLe, 20))
+	q := mesondb.IndexQuery("LastAccessTime").Range(mesondb.VPair(int64(10), true, int64(20), true))
 	err := store.UpdateMatching(&FileInfoWithIndex{}, q, func(record interface{}) error {
 		v, ok := record.(*FileInfoWithIndex)
 		if !ok {
@@ -220,7 +235,7 @@ func Test_updateQuery(t *testing.T) {
 
 	log.Println("query by primary key")
 	var infos []FileInfoWithIndex
-	q = mesondb.NewQuery(mesondb.Key).Range(mesondb.Condition(mesondb.OpGe, "0"), mesondb.Condition(mesondb.OpLe, "100"))
+	q = mesondb.KeyQuery().Range(mesondb.VPair("0", true, "100", true))
 	err = store.Find(&infos, q)
 	if err != nil {
 		log.Println(err)
@@ -245,7 +260,7 @@ func Test_deleteByPrimaryKey(t *testing.T) {
 
 	log.Println("query by primary key")
 	var infos []FileInfoWithIndex
-	q := mesondb.NewQuery(mesondb.Key).Range(mesondb.Condition(mesondb.OpGe, "0"), mesondb.Condition(mesondb.OpLe, "100"))
+	q := mesondb.KeyQuery().Range(mesondb.VPair("0", true, "100", true))
 	err = store.Find(&infos, q)
 	if err != nil {
 		log.Println(err)
@@ -259,7 +274,7 @@ func Test_deleteQuery(t *testing.T) {
 	Test_batchInsert(t)
 
 	log.Println("delete query")
-	q := mesondb.NewQuery("LastAccessTime").Range(mesondb.Condition(mesondb.OpGe, 10), mesondb.Condition(mesondb.OpLe, 20))
+	q := mesondb.IndexQuery("LastAccessTime").Range(mesondb.VPair(int64(10), true, int64(20), true))
 	err := store.DeleteMatching(&FileInfoWithIndex{}, q)
 	if err != nil {
 		log.Println(err)
@@ -267,7 +282,7 @@ func Test_deleteQuery(t *testing.T) {
 
 	log.Println("query by primary key")
 	var infos []FileInfoWithIndex
-	q = mesondb.NewQuery(mesondb.Key).Range(mesondb.Condition(mesondb.OpGe, "0"), mesondb.Condition(mesondb.OpLe, "100"))
+	q = mesondb.KeyQuery().Range(mesondb.VPair("0", true, "100", true))
 	err = store.Find(&infos, q)
 	if err != nil {
 		log.Println(err)

@@ -9,63 +9,43 @@ import (
 	"strings"
 )
 
-type Operator int
-
-const (
-	opEq Operator = iota
-	OpGt
-	OpGe
-	OpLt
-	OpLe
-)
-
-type QueryType int
-
-const QueryRange QueryType = 1
-const QueryEqual QueryType = 2
-
-// Key is shorthand for specifying a query to run again the Key in a bolthold, simply returns ""
-// Where(bolthold.Key).Eq("testkey")
-const Key = ""
-
-// BoltholdKeyTag is the struct tag used to define an a field as a key for use in a Find query
-const BoltholdKeyTag = "boltholdKey"
-
-type Criterion struct {
-	op    Operator
-	value interface{}
-}
-
 type Query struct {
 	index      string
 	limit      int
 	offset     int
 	reverse    bool
 	excludeKey [][]byte
+	isKeyQuery bool
 
-	queryType     QueryType
-	rangeCriteria []*Criterion
-	equalCriteria *Criterion
+	queryType      QueryType
+	rangeCondition *RangeCondition
+	equalCondition *EqualCondition
 }
 
-func NewQuery(index string) *Query {
+func IndexQuery(index string) *Query {
 	return &Query{
-		index: index,
+		index:      index,
+		isKeyQuery: false,
 	}
 }
 
-func (q *Query) Range(c ...*Criterion) *Query {
-	if q.rangeCriteria == nil {
-		q.rangeCriteria = []*Criterion{}
+func KeyQuery() *Query {
+	return &Query{
+		index:      "",
+		isKeyQuery: true,
 	}
+}
+
+func (q *Query) Range(c *RangeCondition) *Query {
+
 	q.queryType = QueryRange
-	q.rangeCriteria = append(q.rangeCriteria, c...)
+	q.rangeCondition = c
 	return q
 }
 
 func (q *Query) Equal(value interface{}) *Query {
 	q.queryType = QueryEqual
-	q.equalCriteria = &Criterion{opEq, value}
+	q.equalCondition = &EqualCondition{opEq, value}
 	return q
 }
 
@@ -110,6 +90,7 @@ func checkQuery(q **Query) error {
 
 	if (*q).queryType == 0 {
 		(*q).queryType = QueryRange
+		(*q).rangeCondition = VPair(nil, true, nil, true)
 	}
 
 	if (*q).queryType != QueryEqual && (*q).queryType != QueryRange {
@@ -117,49 +98,23 @@ func checkQuery(q **Query) error {
 	}
 
 	if (*q).queryType == QueryEqual {
-		if (*q).equalCriteria == nil {
+		if (*q).equalCondition == nil {
 			return errors.New("equal Criteria is nil")
 		}
 
-		if (*q).equalCriteria.value == nil {
+		if (*q).equalCondition.value == nil {
 			return errors.New("equal Criteria value is nil")
 		}
 
 	}
 
 	if (*q).queryType == QueryRange {
-		if len((*q).rangeCriteria) > 2 {
-			return errors.New("range condition error,max condition count is 2")
+		if (*q).rangeCondition == nil {
+			return errors.New("range is empty")
 		}
-
-		var minValue, maxValue []byte
-		var err error
-		for _, v := range (*q).rangeCriteria {
-			if v.value == nil {
-				return errors.New("range Criteria value is nil")
-			}
-
-			switch v.op {
-			case OpGe, OpGt:
-				minValue, err = DefaultEncode(v.value)
-				if err != nil {
-					return err
-				}
-			case OpLe, OpLt:
-				maxValue, err = DefaultEncode(v.value)
-				if err != nil {
-					return err
-				}
-			}
-
+		if len((*q).rangeCondition.RangePair) == 0 {
+			return errors.New("range is empty")
 		}
-
-		if minValue != nil && maxValue != nil {
-			if bytes.Compare(minValue, maxValue) > 0 {
-				return errors.New("range Criteria value range error")
-			}
-		}
-
 	}
 
 	if (*q).limit < 0 {
@@ -171,13 +126,6 @@ func checkQuery(q **Query) error {
 	}
 
 	return nil
-}
-
-func Condition(op Operator, value interface{}) *Criterion {
-	return &Criterion{
-		op:    op,
-		value: value,
-	}
 }
 
 func (s *Store) findOneQuery(source BucketSource, result interface{}, query *Query) error {
@@ -371,6 +319,13 @@ func (s *Store) findQuery(source BucketSource, result interface{}, query *Query)
 	})
 }
 
+func reverse(s []*ValuePair) []*ValuePair {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
+	return s
+}
+
 func (s *Store) runQuery(source BucketSource, dataType interface{}, tp reflect.Type, query *Query, action func(keys keyList, tp reflect.Type, bkt *bolt.Bucket) error) error {
 	//run query
 	storer := s.newStorer(dataType)
@@ -397,386 +352,548 @@ func (s *Store) runQuery(source BucketSource, dataType interface{}, tp reflect.T
 
 	switch query.queryType {
 	case QueryRange:
-		if len(query.rangeCriteria) > 2 {
-			return errors.New("range condition error,max condition count is 2")
+		if len(query.rangeCondition.RangePair) == 0 {
+			return errors.New("range is empty")
 		}
 
-		var forStart func(c *bolt.Cursor) ([]byte, []byte)
-		var forCondition func(k []byte) bool
-		var forNext func(c *bolt.Cursor) ([]byte, []byte)
-
-		if len(query.rangeCriteria) == 0 {
-			if query.reverse {
-				forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-					return c.Last()
-				}
-				forCondition = func(k []byte) bool {
-					return k != nil
-				}
-			} else {
-				forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-					return c.First()
-				}
-				forCondition = func(k []byte) bool {
-					return k != nil
-				}
-			}
-		} else {
-
-			switch query.rangeCriteria[0].op {
-			case OpGe:
-				seekMin, err := s.encode(query.rangeCriteria[0].value)
-				if err != nil {
-					return fmt.Errorf("query value encode err:%s", err.Error())
-				}
-
-				if query.reverse {
-					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-						return c.Last()
-					}
-					forCondition = func(k []byte) bool {
-						return bytes.Compare(k, seekMin) >= 0
-					}
-				} else {
-					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-						return c.Seek(seekMin)
-					}
-					forCondition = func(k []byte) bool {
-						return k != nil
-					}
-				}
-
-			case OpGt:
-				seekMin, err := s.encode(query.rangeCriteria[0].value)
-				if err != nil {
-					return fmt.Errorf("query value encode err:%s", err.Error())
-				}
-
-				if query.reverse {
-					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-						return c.Last()
-					}
-					forCondition = func(k []byte) bool {
-						return bytes.Compare(k, seekMin) > 0
-					}
-				} else {
-					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-						k, v := c.Seek(seekMin)
-						if bytes.Compare(k, seekMin) == 0 {
-							return c.Next()
-						}
-						return k, v
-					}
-					forCondition = func(k []byte) bool {
-						return k != nil
-					}
-				}
-			case OpLe:
-				value, err := s.encode(query.rangeCriteria[0].value)
-				if err != nil {
-					return fmt.Errorf("query value encode err:%s", err.Error())
-				}
-				if query.reverse {
-					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-
-						k, v := c.Seek(value)
-						if bytes.Compare(k, value) > 0 {
-							k, v = c.Prev()
-						}
-
-						return k, v
-
-					}
-					forCondition = func(k []byte) bool {
-						return k != nil
-					}
-
-				} else {
-					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-						return c.First()
-					}
-					forCondition = func(k []byte) bool {
-						if k == nil {
-							return false
-						}
-						return bytes.Compare(k, value) <= 0
-					}
-				}
-
-			case OpLt:
-				value, err := s.encode(query.rangeCriteria[0].value)
-				if err != nil {
-					return fmt.Errorf("query value encode err:%s", err.Error())
-				}
-				if query.reverse {
-					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-
-						k, v := c.Seek(value)
-						if bytes.Compare(k, value) >= 0 {
-							k, v = c.Prev()
-						}
-
-						return k, v
-
-					}
-					forCondition = func(k []byte) bool {
-						return k != nil
-					}
-
-				} else {
-					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-						return c.First()
-					}
-					forCondition = func(k []byte) bool {
-						if k == nil {
-							return false
-						}
-						return bytes.Compare(k, value) < 0
-					}
-				}
-			}
-
-			if len(query.rangeCriteria) == 2 {
-				switch query.rangeCriteria[1].op {
-				case OpGe:
-					seekMin, err := s.encode(query.rangeCriteria[1].value)
-					if err != nil {
-						return fmt.Errorf("query value encode err:%s", err.Error())
-					}
-
-					if query.reverse {
-						if forStart == nil {
-							forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-								return c.Last()
-							}
-						}
-						forCondition = func(k []byte) bool {
-							return bytes.Compare(k, seekMin) >= 0
-						}
-					} else {
-						forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-							return c.Seek(seekMin)
-						}
-						if forCondition == nil {
-							forCondition = func(k []byte) bool {
-								return k != nil
-							}
-						}
-					}
-
-				case OpGt:
-					seekMin, err := s.encode(query.rangeCriteria[1].value)
-					if err != nil {
-						return fmt.Errorf("query value encode err:%s", err.Error())
-					}
-
-					if query.reverse {
-						if forStart == nil {
-							forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-								return c.Last()
-							}
-						}
-						forCondition = func(k []byte) bool {
-							return bytes.Compare(k, seekMin) > 0
-						}
-					} else {
-						forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-							k, v := c.Seek(seekMin)
-							if bytes.Compare(k, seekMin) == 0 {
-								return c.Next()
-							}
-							return k, v
-						}
-						if forCondition == nil {
-							forCondition = func(k []byte) bool {
-								return k != nil
-							}
-						}
-					}
-
-				case OpLe:
-					value, err := s.encode(query.rangeCriteria[1].value)
-					if err != nil {
-						return fmt.Errorf("query value encode err:%s", err.Error())
-					}
-					if query.reverse {
-						forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-
-							k, v := c.Seek(value)
-							if bytes.Compare(k, value) > 0 {
-								k, v = c.Prev()
-							}
-
-							return k, v
-
-						}
-						if forCondition == nil {
-							forCondition = func(k []byte) bool {
-								return k != nil
-							}
-						}
-					} else {
-						if forStart == nil {
-							forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-								return c.First()
-							}
-						}
-						forCondition = func(k []byte) bool {
-							if k == nil {
-								return false
-							}
-
-							return bytes.Compare(k, value) <= 0
-						}
-					}
-
-				case OpLt:
-					value, err := s.encode(query.rangeCriteria[1].value)
-					if err != nil {
-						return fmt.Errorf("query value encode err:%s", err.Error())
-					}
-
-					if query.reverse {
-						forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-
-							k, v := c.Seek(value)
-							if bytes.Compare(k, value) >= 0 {
-								k, v = c.Prev()
-							}
-
-							return k, v
-
-						}
-						if forCondition == nil {
-							forCondition = func(k []byte) bool {
-								return k != nil
-							}
-						}
-					} else {
-						if forStart == nil {
-							forStart = func(c *bolt.Cursor) ([]byte, []byte) {
-								return c.First()
-							}
-						}
-						forCondition = func(k []byte) bool {
-							if k == nil {
-								return false
-							}
-							return bytes.Compare(k, value) < 0
-						}
-					}
-
-				}
-			}
-		}
-
+		vPairs := query.rangeCondition.RangePair
 		if query.reverse {
-			forNext = func(c *bolt.Cursor) ([]byte, []byte) {
-				return c.Prev()
-			}
-		} else {
-			forNext = func(c *bolt.Cursor) ([]byte, []byte) {
-				return c.Next()
-			}
+			vPairs = reverse(vPairs)
 		}
 
-		var k, v []byte
 		leftOffset := query.offset
 		keyCount := 0
-		for k, v = forStart(c); forCondition(k); k, v = forNext(c) {
-			skip := false
-			for _, exclude := range query.excludeKey {
-				if bytes.Compare(k, exclude) == 0 {
-					skip = true
-					break
-				}
-			}
-			if skip {
-				continue
-			}
-
-			if isQueryPrimaryKey {
-				keyCount++
-				//offset
-				if query.offset > 0 && keyCount <= query.offset {
-					continue
-				}
-
-				keys = append(keys, k)
-				//limit
-				if query.limit > 0 && len(keys) >= query.limit {
-					break
-				}
-			} else {
-				var tempKeysThisRound = make(keyList, 0)
-				err := s.decode(v, &tempKeysThisRound)
-				if err != nil {
-					return err
-				}
-
-				//offset
-				left := leftOffset - len(tempKeysThisRound)
-				if left >= 0 {
-					leftOffset = left
-					continue
-				}
-				if leftOffset > 0 {
-					tempKeysThisRound = tempKeysThisRound[leftOffset:]
-					leftOffset = 0
-				}
-
-				//limit
-				limitThisRound := query.limit - keyCount
-				keyCount += len(tempKeysThisRound)
-				if query.limit > 0 && len(tempKeysThisRound) > limitThisRound {
-					tempKeysThisRound = tempKeysThisRound[:limitThisRound]
-				}
-
-				keys = append(keys, tempKeysThisRound...)
-				if query.limit > 0 && keyCount >= query.limit {
-					break
-				}
-			}
-		}
-	case QueryEqual:
-		seek, err := s.encode(query.equalCriteria.value)
-		if err != nil {
-			return fmt.Errorf("query value encode err:%s", err.Error())
-		}
-
-		key, v := c.Seek(seek)
-		//query value not exist
-		if key == nil || v == nil {
-			return nil
-		}
-		if bytes.Compare(key, seek) != 0 {
-			return nil
-		}
-
-		if isQueryPrimaryKey {
-			keys = append(keys, key)
-		} else {
-			err = s.decode(v, &keys)
+		for _, vPair := range vPairs {
+			tempKeys, finish, err := rangeQuery(s, c, isQueryPrimaryKey, query, vPair, &keyCount, &leftOffset)
 			if err != nil {
 				return err
 			}
-		}
-
-		//handle offset
-		if query.offset > 0 {
-			if query.offset < len(keys) {
-				keys = keys[query.offset:]
-			} else {
-				return nil
+			keys = append(keys, tempKeys...)
+			if query.limit > 0 && len(keys) >= query.limit {
+				break
+			}
+			if finish {
+				break
 			}
 		}
 
-		//handle limit
-		if query.limit > 0 && query.limit < len(keys) {
-			keys = keys[:query.limit]
+		//var forStart func(c *bolt.Cursor) ([]byte, []byte)
+		//var forCondition func(k []byte) bool
+		//var forNext func(c *bolt.Cursor) ([]byte, []byte)
+		//
+		//if len(query.rangeCriteria) == 0 {
+		//	if query.reverse {
+		//		forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//			return c.Last()
+		//		}
+		//		forCondition = func(k []byte) bool {
+		//			return k != nil
+		//		}
+		//	} else {
+		//		forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//			return c.First()
+		//		}
+		//		forCondition = func(k []byte) bool {
+		//			return k != nil
+		//		}
+		//	}
+		//} else {
+		//
+		//	switch query.rangeCriteria[0].op {
+		//	case OpGe:
+		//		seekMin, err := s.encode(query.rangeCriteria[0].value)
+		//		if err != nil {
+		//			return fmt.Errorf("query value encode err:%s", err.Error())
+		//		}
+		//
+		//		if query.reverse {
+		//			forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//				return c.Last()
+		//			}
+		//			forCondition = func(k []byte) bool {
+		//				return bytes.Compare(k, seekMin) >= 0
+		//			}
+		//		} else {
+		//			forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//				return c.Seek(seekMin)
+		//			}
+		//			forCondition = func(k []byte) bool {
+		//				return k != nil
+		//			}
+		//		}
+		//
+		//	case OpGt:
+		//		seekMin, err := s.encode(query.rangeCriteria[0].value)
+		//		if err != nil {
+		//			return fmt.Errorf("query value encode err:%s", err.Error())
+		//		}
+		//
+		//		if query.reverse {
+		//			forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//				return c.Last()
+		//			}
+		//			forCondition = func(k []byte) bool {
+		//				return bytes.Compare(k, seekMin) > 0
+		//			}
+		//		} else {
+		//			forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//				k, v := c.Seek(seekMin)
+		//				if bytes.Compare(k, seekMin) == 0 {
+		//					return c.Next()
+		//				}
+		//				return k, v
+		//			}
+		//			forCondition = func(k []byte) bool {
+		//				return k != nil
+		//			}
+		//		}
+		//	case OpLe:
+		//		value, err := s.encode(query.rangeCriteria[0].value)
+		//		if err != nil {
+		//			return fmt.Errorf("query value encode err:%s", err.Error())
+		//		}
+		//		if query.reverse {
+		//			forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//
+		//				k, v := c.Seek(value)
+		//				if bytes.Compare(k, value) > 0 {
+		//					k, v = c.Prev()
+		//				}
+		//
+		//				return k, v
+		//
+		//			}
+		//			forCondition = func(k []byte) bool {
+		//				return k != nil
+		//			}
+		//
+		//		} else {
+		//			forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//				return c.First()
+		//			}
+		//			forCondition = func(k []byte) bool {
+		//				if k == nil {
+		//					return false
+		//				}
+		//				return bytes.Compare(k, value) <= 0
+		//			}
+		//		}
+		//
+		//	case OpLt:
+		//		value, err := s.encode(query.rangeCriteria[0].value)
+		//		if err != nil {
+		//			return fmt.Errorf("query value encode err:%s", err.Error())
+		//		}
+		//		if query.reverse {
+		//			forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//
+		//				k, v := c.Seek(value)
+		//				if bytes.Compare(k, value) >= 0 {
+		//					k, v = c.Prev()
+		//				}
+		//
+		//				return k, v
+		//
+		//			}
+		//			forCondition = func(k []byte) bool {
+		//				return k != nil
+		//			}
+		//
+		//		} else {
+		//			forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//				return c.First()
+		//			}
+		//			forCondition = func(k []byte) bool {
+		//				if k == nil {
+		//					return false
+		//				}
+		//				return bytes.Compare(k, value) < 0
+		//			}
+		//		}
+		//	}
+		//
+		//	if len(query.rangeCriteria) == 2 {
+		//		switch query.rangeCriteria[1].op {
+		//		case OpGe:
+		//			seekMin, err := s.encode(query.rangeCriteria[1].value)
+		//			if err != nil {
+		//				return fmt.Errorf("query value encode err:%s", err.Error())
+		//			}
+		//
+		//			if query.reverse {
+		//				if forStart == nil {
+		//					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//						return c.Last()
+		//					}
+		//				}
+		//				forCondition = func(k []byte) bool {
+		//					return bytes.Compare(k, seekMin) >= 0
+		//				}
+		//			} else {
+		//				forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//					return c.Seek(seekMin)
+		//				}
+		//				if forCondition == nil {
+		//					forCondition = func(k []byte) bool {
+		//						return k != nil
+		//					}
+		//				}
+		//			}
+		//
+		//		case OpGt:
+		//			seekMin, err := s.encode(query.rangeCriteria[1].value)
+		//			if err != nil {
+		//				return fmt.Errorf("query value encode err:%s", err.Error())
+		//			}
+		//
+		//			if query.reverse {
+		//				if forStart == nil {
+		//					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//						return c.Last()
+		//					}
+		//				}
+		//				forCondition = func(k []byte) bool {
+		//					return bytes.Compare(k, seekMin) > 0
+		//				}
+		//			} else {
+		//				forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//					k, v := c.Seek(seekMin)
+		//					if bytes.Compare(k, seekMin) == 0 {
+		//						return c.Next()
+		//					}
+		//					return k, v
+		//				}
+		//				if forCondition == nil {
+		//					forCondition = func(k []byte) bool {
+		//						return k != nil
+		//					}
+		//				}
+		//			}
+		//
+		//		case OpLe:
+		//			value, err := s.encode(query.rangeCriteria[1].value)
+		//			if err != nil {
+		//				return fmt.Errorf("query value encode err:%s", err.Error())
+		//			}
+		//			if query.reverse {
+		//				forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//
+		//					k, v := c.Seek(value)
+		//					if bytes.Compare(k, value) > 0 {
+		//						k, v = c.Prev()
+		//					}
+		//
+		//					return k, v
+		//
+		//				}
+		//				if forCondition == nil {
+		//					forCondition = func(k []byte) bool {
+		//						return k != nil
+		//					}
+		//				}
+		//			} else {
+		//				if forStart == nil {
+		//					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//						return c.First()
+		//					}
+		//				}
+		//				forCondition = func(k []byte) bool {
+		//					if k == nil {
+		//						return false
+		//					}
+		//
+		//					return bytes.Compare(k, value) <= 0
+		//				}
+		//			}
+		//
+		//		case OpLt:
+		//			value, err := s.encode(query.rangeCriteria[1].value)
+		//			if err != nil {
+		//				return fmt.Errorf("query value encode err:%s", err.Error())
+		//			}
+		//
+		//			if query.reverse {
+		//				forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//
+		//					k, v := c.Seek(value)
+		//					if bytes.Compare(k, value) >= 0 {
+		//						k, v = c.Prev()
+		//					}
+		//
+		//					return k, v
+		//
+		//				}
+		//				if forCondition == nil {
+		//					forCondition = func(k []byte) bool {
+		//						return k != nil
+		//					}
+		//				}
+		//			} else {
+		//				if forStart == nil {
+		//					forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+		//						return c.First()
+		//					}
+		//				}
+		//				forCondition = func(k []byte) bool {
+		//					if k == nil {
+		//						return false
+		//					}
+		//					return bytes.Compare(k, value) < 0
+		//				}
+		//			}
+		//
+		//		}
+		//	}
+		//}
+		//
+		//if query.reverse {
+		//	forNext = func(c *bolt.Cursor) ([]byte, []byte) {
+		//		return c.Prev()
+		//	}
+		//} else {
+		//	forNext = func(c *bolt.Cursor) ([]byte, []byte) {
+		//		return c.Next()
+		//	}
+		//}
+		//
+		//var k, v []byte
+		//leftOffset := query.offset
+		//keyCount := 0
+		//for k, v = forStart(c); forCondition(k); k, v = forNext(c) {
+		//	skip := false
+		//	for _, exclude := range query.excludeKey {
+		//		if bytes.Compare(k, exclude) == 0 {
+		//			skip = true
+		//			break
+		//		}
+		//	}
+		//	if skip {
+		//		continue
+		//	}
+		//
+		//	if isQueryPrimaryKey {
+		//		keyCount++
+		//		//offset
+		//		if query.offset > 0 && keyCount <= query.offset {
+		//			continue
+		//		}
+		//
+		//		keys = append(keys, k)
+		//		//limit
+		//		if query.limit > 0 && len(keys) >= query.limit {
+		//			break
+		//		}
+		//	} else {
+		//		var tempKeysThisRound = make(keyList, 0)
+		//		err := s.decode(v, &tempKeysThisRound)
+		//		if err != nil {
+		//			return err
+		//		}
+		//
+		//		//offset
+		//		left := leftOffset - len(tempKeysThisRound)
+		//		if left >= 0 {
+		//			leftOffset = left
+		//			continue
+		//		}
+		//		if leftOffset > 0 {
+		//			tempKeysThisRound = tempKeysThisRound[leftOffset:]
+		//			leftOffset = 0
+		//		}
+		//
+		//		//limit
+		//		limitThisRound := query.limit - keyCount
+		//		keyCount += len(tempKeysThisRound)
+		//		if query.limit > 0 && len(tempKeysThisRound) > limitThisRound {
+		//			tempKeysThisRound = tempKeysThisRound[:limitThisRound]
+		//		}
+		//
+		//		keys = append(keys, tempKeysThisRound...)
+		//		if query.limit > 0 && keyCount >= query.limit {
+		//			break
+		//		}
+		//	}
+		//}
+	case QueryEqual:
+		var err error
+		keys, err = equalQuery(s, c, isQueryPrimaryKey, query)
+		if err != nil {
+			return err
 		}
-
 	}
 
 	return action(keys, tp, mainBkt)
+}
+
+func equalQuery(s *Store, c *bolt.Cursor, isQueryPrimaryKey bool, query *Query) (keyList, error) {
+	var keys = make(keyList, 0)
+	seek, err := s.encode(query.equalCondition.value)
+	if err != nil {
+		return nil, fmt.Errorf("query value encode err:%s", err.Error())
+	}
+
+	key, v := c.Seek(seek)
+	//query value not exist
+	if key == nil || v == nil {
+		return keys, nil
+	}
+	if bytes.Compare(key, seek) != 0 {
+		return keys, nil
+	}
+
+	if isQueryPrimaryKey {
+		keys = append(keys, key)
+	} else {
+		err = s.decode(v, &keys)
+		if err != nil {
+			return keys, err
+		}
+	}
+
+	//handle offset
+	if query.offset > 0 {
+		if query.offset < len(keys) {
+			keys = keys[query.offset:]
+		} else {
+			return keys, nil
+		}
+	}
+
+	//handle limit
+	if query.limit > 0 && query.limit < len(keys) {
+		keys = keys[:query.limit]
+	}
+	return keys, nil
+}
+
+func rangeQuery(s *Store, c *bolt.Cursor, isQueryPrimaryKey bool, query *Query, pair *ValuePair, keyCount *int, leftOffset *int) (keyList, bool, error) {
+	var keys = make(keyList, 0)
+
+	var forStart func(c *bolt.Cursor) ([]byte, []byte)
+	var forCondition func(k []byte) bool
+	var forNext func(c *bolt.Cursor) ([]byte, []byte)
+
+	if query.reverse {
+		//from right => left
+		forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+			if pair.rightIsEnd() {
+				return c.Last()
+			}
+
+			k, v := c.Seek(pair.RightValue)
+			if !pair.IsRightInclude && bytes.Equal(pair.RightValue, k) {
+				k, v = c.Prev()
+			}
+			return k, v
+		}
+
+		forCondition = func(k []byte) bool {
+			if k == nil {
+				return false
+			}
+			if pair.leftIsStart() {
+				return k != nil
+			}
+
+			if pair.IsLeftInclude {
+				return bytes.Compare(k, pair.LeftValue) >= 0
+			} else {
+				return bytes.Compare(k, pair.LeftValue) > 0
+			}
+		}
+
+		forNext = func(c *bolt.Cursor) ([]byte, []byte) {
+			return c.Prev()
+		}
+	} else {
+		//from left => right
+		forStart = func(c *bolt.Cursor) ([]byte, []byte) {
+			if pair.leftIsStart() {
+				return c.First()
+			}
+
+			k, v := c.Seek(pair.LeftValue)
+			if !pair.IsLeftInclude && bytes.Equal(pair.LeftValue, k) {
+				k, v = c.Next()
+			}
+			return k, v
+		}
+
+		forCondition = func(k []byte) bool {
+			if pair.rightIsEnd() {
+				return k != nil
+			}
+
+			if pair.IsRightInclude {
+				return bytes.Compare(k, pair.RightValue) <= 0
+			} else {
+				return bytes.Compare(k, pair.RightValue) < 0
+			}
+		}
+
+		forNext = func(c *bolt.Cursor) ([]byte, []byte) {
+			return c.Next()
+		}
+	}
+
+	var k, v []byte
+	for k, v = forStart(c); forCondition(k); k, v = forNext(c) {
+		skip := false
+		for _, exclude := range query.excludeKey {
+			if bytes.Compare(k, exclude) == 0 {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+
+		if isQueryPrimaryKey {
+			*keyCount++
+			//offset
+			if query.offset > 0 && *keyCount <= query.offset {
+				continue
+			}
+
+			keys = append(keys, k)
+			//limit
+			if query.limit > 0 && len(keys) >= query.limit {
+				return keys, true, nil
+			}
+		} else {
+			var tempKeysThisRound = make(keyList, 0)
+			err := s.decode(v, &tempKeysThisRound)
+			if err != nil {
+				return nil, false, err
+			}
+
+			//offset
+			left := *leftOffset - len(tempKeysThisRound)
+			if left >= 0 {
+				*leftOffset = left
+				continue
+			}
+
+			if *leftOffset > 0 {
+				tempKeysThisRound = tempKeysThisRound[*leftOffset:]
+				*leftOffset = 0
+			}
+
+			//limit
+			limitThisRound := query.limit - *keyCount
+			*keyCount += len(tempKeysThisRound)
+			if query.limit > 0 && len(tempKeysThisRound) > limitThisRound {
+				tempKeysThisRound = tempKeysThisRound[:limitThisRound]
+			}
+
+			keys = append(keys, tempKeysThisRound...)
+			if query.limit > 0 && *keyCount >= query.limit {
+				return keys, true, nil
+			}
+		}
+	}
+
+	return keys, false, nil
+
 }

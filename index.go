@@ -5,6 +5,13 @@ import (
 	"sort"
 )
 
+// Key is shorthand for specifying a query to run again the Key in a bolthold, simply returns ""
+// Where(bolthold.Key).Eq("testkey")
+//const Key = ""
+
+// BoltholdKeyTag is the struct tag used to define an a field as a key for use in a Find query
+const BoltholdKeyTag = "boltholdKey"
+
 // BoltholdIndexTag is the struct tag used to define a field as indexable for a bolthold
 const BoltholdIndexTag = "boltholdIndex"
 
@@ -18,7 +25,7 @@ const BoltholdUniqueTag = "boltholdUnique"
 const indexBucketPrefix = "_index"
 
 // size of iterator keys stored in memory before more are fetched
-const iteratorKeyMinCacheSize = 100
+//const iteratorKeyMinCacheSize = 100
 
 // Index is a function that returns the indexable, encoded bytes of the passed in value
 type Index struct {
@@ -130,13 +137,6 @@ func indexBucketName(typeName, indexName string) []byte {
 
 // keyList is a slice of unique, sorted keys([]byte) such as what an index points to
 type keyList [][]byte
-
-func reverse(s [][]byte) [][]byte {
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
-	}
-	return s
-}
 
 func (v *keyList) add(key []byte) {
 	i := sort.Search(len(*v), func(i int) bool {
