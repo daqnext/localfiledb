@@ -515,6 +515,12 @@ func Test_subBucket(t *testing.T) {
 
 		var result2 []*FileInfoWithIndex
 		q := ldb.KeyQuery().Range(ldb.Gt("0").And(ldb.Lt("10")))
+
+		err = store.UpdateMatchingInBucket(bkt, &FileInfoWithIndex{}, q, func(record interface{}) error {
+			record.(*FileInfoWithIndex).FileSize = 999
+			return nil
+		})
+
 		err = store.FindInBucket(bkt, &result2, q)
 		if err != nil {
 			return err
