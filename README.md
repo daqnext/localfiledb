@@ -1,21 +1,21 @@
-# meson-bolt-localdb
+# daqnext/localfiledb
 
 It's a local file db based on [bblot](https://github.com/etcd-io/bbolt) & [BoltHold](https://github.com/timshannon/bolthold)
 
 ## How to use
 ```
-go get github.com/daqnext/meson-bolt-localdb
+go get github.com/daqnext/localfiledb
 go get go.etcd.io/bbolt
 ```
 
 ### Open db file
 ```go
-import mesondb "github.com/daqnext/meson-bolt-localdb"
+import ldb "github.com/daqnext/localfiledb"
 import "go.etcd.io/bbolt"
 
-var store *mesondb.Store
+var store *ldb.Store
 var err error
-store, err = mesondb.Open("test.db", 0666, nil)
+store, err = ldb.Open("test.db", 0666, nil)
 if err != nil {
     log.Println("bolthold can't open")
 	return
@@ -24,7 +24,7 @@ defer store.Close()
 ```
 use custom option
 ```go
-op:=&mesondb.Options{
+op:=&ldb.Options{
     Decoder: func(data []byte, value interface{}) error {
         //define your own decoder
 
@@ -39,7 +39,7 @@ op:=&mesondb.Options{
     //...
     Options:&bbolt.Options{},
 }
-store, err = mesondb.Open("test.db", 0666,op)
+store, err = ldb.Open("test.db", 0666,op)
 ```
 defalut Decoder and Encoder use "golang/gob" except int (int8 int16...) float32 and float64, number value use the encoder which result []byte can be sorted correctly.
 
