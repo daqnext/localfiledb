@@ -130,34 +130,11 @@ if this given key not exist, err ErrNotFound will return.
 
 use query
 ```go
-log.Println("query by some index")
-var infos []FileInfoWithIndex
-q:=mesondb.NewQuery("LastAccessTime").Range(mesondb.Condition(mesondb.OpGe,int64(-20)),mesondb.Condition(mesondb.OpLe,int64(20)))
-err:=store.Find(&infos,q)
-if err != nil {
-	log.Println(err)
-}
-for _,v:=range infos2{
-	log.Println(v)
-}
+
 ```
 query condition example:
 ```go
-//Equal
-mesondb.NewQuery("indexFieldName").Equal(someValue)
-//Range
-mesondb.NewQuery("indexFieldName").Range(mesondb.Condition(mesondb.OpGe,someValue),mesondb.Condition(mesondb.OpLe,someValue))
-//Offset Limit Exclude Desc Asc
-mesondb.NewQuery("indexFieldName").Range(mesondb.Condition(mesondb.OpGe,someValue)).Limit(10).Offset(10).Exclude(v1,v2,..).Desc()
-//if you do not define the Range, it will scan all index value 
-mesondb.NewQuery("indexFieldName").Limit(10).Offset(10).Exclude(v1,v2,..).Desc()
-//Use indexField "mesondb.Key" to query the Key. It also can use Range query if the Key is sortable
-mesondb.NewQuery(mesondb.Key).Range(mesondb.Condition(mesondb.OpGe,someValue))
-//Operator
-//mesondb.OpGt ">"
-//mesondb.OpGe ">="
-//mesondb.OpLt "<"
-//mesondb.OpLe "<="
+
 ```
 The Range query can not get the correct result if the index value is not sortable. Do not use Range query with unsortable index or key.
 
@@ -179,19 +156,7 @@ log.Println(v)
 
 ### Update query
 ```go
-log.Println("update query")
-q := mesondb.NewQuery("LastAccessTime").Range(mesondb.Condition(mesondb.OpGe, 10), mesondb.Condition(mesondb.OpLe, 20))
-err := store.UpdateMatching(&FileInfoWithIndex{}, q, func(record interface{}) error {
-	v, ok := record.(*FileInfoWithIndex)
-	if !ok {
-	    log.Println("interface{} trans error")
-	}
-	v.FileSize = 999
-	return nil
-})
-if err != nil {
-	log.Println(err)
-}
+
 ```
 
 ### Delete
@@ -206,10 +171,5 @@ if err != nil {
 
 by query
 ```go
-log.Println("delete query")
-q := mesondb.NewQuery("LastAccessTime").Range(mesondb.Condition(mesondb.OpGe, 10), mesondb.Condition(mesondb.OpLe, 20))
-err := store.DeleteMatching(&FileInfoWithIndex{}, q)
-if err != nil {
-	log.Println(err)
-}
+
 ```

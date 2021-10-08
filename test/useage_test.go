@@ -75,7 +75,10 @@ func Test_uniqueIndexInsert(t *testing.T) {
 	}
 
 	var ss []SomeStruct
-	store.FindOne(&ss, nil)
+	err = store.FindOne(&ss, nil)
+	if err != nil {
+		log.Println("FindOne query err", err)
+	}
 	for _, v := range ss {
 		log.Println(v)
 	}
@@ -131,22 +134,6 @@ func Test_singleGetByKey(t *testing.T) {
 	log.Println(info2)
 }
 
-////Equal
-//mesondb.NewQuery("indexFieldName").Equal(someValue).Limit(10).Offset(10)
-////Range
-//mesondb.NewQuery("indexFieldName").Range(mesondb.Condition(mesondb.OpGe,someValue),mesondb.Condition(mesondb.OpLe,someValue))
-////Offset Limit Exclude Desc Asc
-//mesondb.NewQuery("indexFieldName").Range(mesondb.Condition(mesondb.OpGe,someValue)).Limit(10).Offset(10).Exclude(v1,v2,..).Desc()
-////if you do not define the Range, it will scan all index value
-//mesondb.NewQuery("indexFieldName").Limit(10).Offset(10).Exclude(v1,v2,..).Desc()
-////Use indexField "mesondb.Key" to query the Key. It also can use Range query if the Key is sortable
-//mesondb.NewQuery(mesondb.Key).Range(mesondb.Condition(mesondb.OpGe,someValue))
-////Operator
-////mesondb.OpGt ">"
-////mesondb.OpGe ">="
-////mesondb.OpLt "<"
-////mesondb.OpLe "<="
-
 func Test_queryGet(t *testing.T) {
 	Test_batchInsert(t)
 
@@ -155,53 +142,54 @@ func Test_queryGet(t *testing.T) {
 	var err error
 	_ = qc
 
-	//log.Println("query by primary key")
-	//var infos []FileInfoWithIndex
+	log.Println("query by primary key")
+	var infos []FileInfoWithIndex
 	//KeyQuery
-	//qc = mesondb.VPair("10", true, "20", true).Or(mesondb.VPair("50", true, "70", true)).Or(mesondb.VPair("80", true, "90", true))
+	qc = mesondb.VPair("10", true, "20", true).Or(mesondb.VPair("50", true, "70", true)).Or(mesondb.VPair("80", true, "90", true))
 	//qc = mesondb.VPair("10", true, nil, true).And(mesondb.VPair(nil, true, "30", true))
-	//q = mesondb.KeyQuery().Range(qc).Desc().Limit(10).Offset(10)
-	//err = store.Find(&infos, q)
-	//if err != nil {
-	//	log.Println(err)
-	//}
-	//for _, v := range infos {
-	//	log.Println(v)
-	//}
+	q = mesondb.KeyQuery().Range(qc).Desc().Limit(10).Offset(10)
+	err = store.Find(&infos, q)
+	if err != nil {
+		log.Println(err)
+	}
+	for _, v := range infos {
+		log.Println(v)
+	}
 
-	//log.Println("query by some index")
-	//var infos2 []FileInfoWithIndex
-	////IndexQuery
-	//q = mesondb.IndexQuery("LastAccessTime").Range(mesondb.VPair(int64(-20),true,int64(20),true))
-	//err = store.Find(&infos2, q)
-	//if err != nil {
-	//	log.Println(err)
-	//}
-	//for _, v := range infos2 {
-	//	log.Println(v)
-	//}
-	//
-	//log.Println("query by some index")
-	//var infos3 []FileInfoWithIndex
-	//q = mesondb.IndexQuery("Rate").Range(mesondb.VPair(float64(-20),true,float64(20),true))
-	//err = store.Find(&infos3, q)
-	//if err != nil {
-	//	log.Println(err)
-	//}
-	//for _, v := range infos3 {
-	//	log.Println(v)
-	//}
-	//
-	//log.Println("query by some index without range")
-	//var infos4 []FileInfoWithIndex
-	//q = mesondb.IndexQuery("Rate").Offset(10).Limit(10)
-	//err = store.Find(&infos4, q)
-	//if err != nil {
-	//	log.Println(err)
-	//}
-	//for _, v := range infos4 {
-	//	log.Println(v)
-	//}
+	log.Println("query by some index")
+	var infos2 []FileInfoWithIndex
+	//IndexQuery
+	qc = mesondb.VPair(int64(-40), true, int64(-30), true).Or(mesondb.VPair(int64(-10), true, int64(10), true)).Or(mesondb.VPair(int64(30), true, int64(40), true))
+	q = mesondb.IndexQuery("LastAccessTime").Range(qc).Limit(10).Offset(10)
+	err = store.Find(&infos2, q)
+	if err != nil {
+		log.Println(err)
+	}
+	for _, v := range infos2 {
+		log.Println(v)
+	}
+
+	log.Println("query by some index")
+	var infos3 []FileInfoWithIndex
+	q = mesondb.IndexQuery("Rate").Range(mesondb.VPair(float64(-20), true, float64(20), true))
+	err = store.Find(&infos3, q)
+	if err != nil {
+		log.Println(err)
+	}
+	for _, v := range infos3 {
+		log.Println(v)
+	}
+
+	log.Println("query by some index without range")
+	var infos4 []FileInfoWithIndex
+	q = mesondb.IndexQuery("Rate").Offset(10).Limit(10)
+	err = store.Find(&infos4, q)
+	if err != nil {
+		log.Println(err)
+	}
+	for _, v := range infos4 {
+		log.Println(v)
+	}
 
 	log.Println("query by some index without range")
 	var infos5 []FileInfoWithIndex

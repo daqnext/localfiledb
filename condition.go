@@ -209,20 +209,16 @@ func (bc *RangeCondition) Or(b *RangeCondition) *RangeCondition {
 				continue
 			}
 
-			//if bytes.Compare(p1.RightValue,p2.LeftValue)<0 {
-			//
-			//}
-			//
-			//if bytes.Compare(p2.RightValue,p1.LeftValue)<0{
-			//
-			//}
-
 		}
 
 		intersection := p1.or(p2)
 		if len(intersection.RangePair) == 0 {
 			// should not happen
+			index1++
+			index2++
+			continue
 		}
+
 		tempR = append(tempR, intersection.RangePair[0])
 		index1++
 		index2++
