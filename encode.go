@@ -1,9 +1,10 @@
-package meson_bolt_localdb
+package localfiledb
 
 import (
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
+	"errors"
 	"math"
 )
 
@@ -15,6 +16,9 @@ type DecodeFunc func(data []byte, value interface{}) error
 
 // DefaultEncode is the default encoding func for bolthold (Gob)
 func DefaultEncode(value interface{}) ([]byte, error) {
+	if value == nil {
+		return nil, errors.New("encode value is nil")
+	}
 
 	var b []byte
 

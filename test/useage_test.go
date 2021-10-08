@@ -2,7 +2,7 @@ package test
 
 import (
 	"fmt"
-	mesondb "github.com/daqnext/meson-bolt-localdb"
+	ldb "github.com/daqnext/localfiledb"
 	"go.etcd.io/bbolt"
 	"log"
 	"math/rand"
@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-var store *mesondb.Store
+var store *ldb.Store
 
 type Pointer struct {
 	Name string
@@ -29,7 +29,7 @@ func Test_singleInsert(t *testing.T) {
 	os.Remove("test.db")
 	var err error
 
-	store, err = mesondb.Open("test.db", 0666, nil)
+	store, err = ldb.Open("test.db", 0666, nil)
 	if err != nil {
 		log.Println("bolthold can't open")
 	}
@@ -51,7 +51,7 @@ func Test_singleInsert(t *testing.T) {
 func Test_uniqueIndexInsert(t *testing.T) {
 	os.Remove("test.db")
 	var err error
-	store, err = mesondb.Open("test.db", 0666, nil)
+	store, err = ldb.Open("test.db", 0666, nil)
 	if err != nil {
 		log.Println("bolthold can't open")
 	}
@@ -87,7 +87,7 @@ func Test_uniqueIndexInsert(t *testing.T) {
 func Test_batchInsert(t *testing.T) {
 	os.Remove("test.db")
 	var err error
-	store, err = mesondb.Open("test.db", 0666, nil)
+	store, err = ldb.Open("test.db", 0666, nil)
 	if err != nil {
 		log.Println("bolthold can't open")
 	}
@@ -137,17 +137,18 @@ func Test_singleGetByKey(t *testing.T) {
 func Test_queryGet(t *testing.T) {
 	Test_batchInsert(t)
 
-	var q *mesondb.Query
-	var qc *mesondb.RangeCondition
+	var q *ldb.Query
+	var qc *ldb.RangeCondition
 	var err error
 	_ = qc
 
 	log.Println("query by primary key")
 	var infos []FileInfoWithIndex
 	//KeyQuery
-	qc = mesondb.VPair("10", true, "20", true).Or(mesondb.VPair("50", true, "70", true)).Or(mesondb.VPair("80", true, "90", true))
-	//qc = mesondb.VPair("10", true, nil, true).And(mesondb.VPair(nil, true, "30", true))
-	q = mesondb.KeyQuery().Range(qc).Desc().Limit(10).Offset(10)
+
+	qc = ldb.VPair("10", true, "20", true).Or(ldb.VPair("50", true, "70", true)).Or(ldb.VPair("80", true, "90", true))
+	//qc = ldb.VPair("10", true, nil, true).And(ldb.VPair(nil, true, "30", true))
+	q = ldb.KeyQuery().Range(qc).Desc().Limit(10).Offset(10)
 	err = store.Find(&infos, q)
 	if err != nil {
 		log.Println(err)
@@ -159,8 +160,8 @@ func Test_queryGet(t *testing.T) {
 	log.Println("query by some index")
 	var infos2 []FileInfoWithIndex
 	//IndexQuery
-	qc = mesondb.VPair(int64(-40), true, int64(-30), true).Or(mesondb.VPair(int64(-10), true, int64(10), true)).Or(mesondb.VPair(int64(30), true, int64(40), true))
-	q = mesondb.IndexQuery("LastAccessTime").Range(qc).Limit(10).Offset(10)
+	qc = ldb.VPair(int64(-40), true, int64(-30), true).Or(ldb.VPair(int64(-10), true, int64(10), true)).Or(ldb.VPair(int64(30), true, int64(40), true))
+	q = ldb.IndexQuery("LastAccessTime").Range(qc).Limit(10).Offset(10)
 	err = store.Find(&infos2, q)
 	if err != nil {
 		log.Println(err)
@@ -171,7 +172,7 @@ func Test_queryGet(t *testing.T) {
 
 	log.Println("query by some index")
 	var infos3 []FileInfoWithIndex
-	q = mesondb.IndexQuery("Rate").Range(mesondb.VPair(float64(-20), true, float64(20), true))
+	q = ldb.IndexQuery("Rate").Range(ldb.VPair(float64(-20), true, float64(20), true))
 	err = store.Find(&infos3, q)
 	if err != nil {
 		log.Println(err)
@@ -182,7 +183,7 @@ func Test_queryGet(t *testing.T) {
 
 	log.Println("query by some index without range")
 	var infos4 []FileInfoWithIndex
-	q = mesondb.IndexQuery("Rate").Offset(10).Limit(10)
+	q = ldb.IndexQuery("Rate").Offset(10).Limit(10)
 	err = store.Find(&infos4, q)
 	if err != nil {
 		log.Println(err)
@@ -193,7 +194,7 @@ func Test_queryGet(t *testing.T) {
 
 	log.Println("query by some index without range")
 	var infos5 []FileInfoWithIndex
-	q = mesondb.IndexQuery("LastAccessTime").Equal(int64(20))
+	q = ldb.IndexQuery("LastAccessTime").Equal(int64(20))
 	err = store.Find(&infos5, q)
 	if err != nil {
 		log.Println(err)
@@ -208,7 +209,7 @@ func Test_updateQuery(t *testing.T) {
 	Test_batchInsert(t)
 
 	log.Println("update query")
-	q := mesondb.IndexQuery("LastAccessTime").Range(mesondb.VPair(int64(10), true, int64(20), true))
+	q := ldb.IndexQuery("LastAccessTime").Range(ldb.VPair(int64(10), true, int64(20), true))
 	err := store.UpdateMatching(&FileInfoWithIndex{}, q, func(record interface{}) error {
 		v, ok := record.(*FileInfoWithIndex)
 		if !ok {
@@ -223,7 +224,7 @@ func Test_updateQuery(t *testing.T) {
 
 	log.Println("query by primary key")
 	var infos []FileInfoWithIndex
-	q = mesondb.KeyQuery().Range(mesondb.VPair("0", true, "100", true))
+	q = ldb.KeyQuery().Range(ldb.VPair("0", true, "100", true))
 	err = store.Find(&infos, q)
 	if err != nil {
 		log.Println(err)
@@ -248,7 +249,7 @@ func Test_deleteByPrimaryKey(t *testing.T) {
 
 	log.Println("query by primary key")
 	var infos []FileInfoWithIndex
-	q := mesondb.KeyQuery().Range(mesondb.VPair("0", true, "100", true))
+	q := ldb.KeyQuery().Range(ldb.VPair("0", true, "100", true))
 	err = store.Find(&infos, q)
 	if err != nil {
 		log.Println(err)
@@ -262,7 +263,7 @@ func Test_deleteQuery(t *testing.T) {
 	Test_batchInsert(t)
 
 	log.Println("delete query")
-	q := mesondb.IndexQuery("LastAccessTime").Range(mesondb.VPair(int64(10), true, int64(20), true))
+	q := ldb.IndexQuery("LastAccessTime").Range(ldb.VPair(int64(10), true, int64(20), true))
 	err := store.DeleteMatching(&FileInfoWithIndex{}, q)
 	if err != nil {
 		log.Println(err)
@@ -270,7 +271,7 @@ func Test_deleteQuery(t *testing.T) {
 
 	log.Println("query by primary key")
 	var infos []FileInfoWithIndex
-	q = mesondb.KeyQuery().Range(mesondb.VPair("0", true, "100", true))
+	q = ldb.KeyQuery().Range(ldb.VPair("0", true, "100", true))
 	err = store.Find(&infos, q)
 	if err != nil {
 		log.Println(err)
@@ -283,7 +284,7 @@ func Test_deleteQuery(t *testing.T) {
 func Test_checkIndexBucket(t *testing.T) {
 	//os.Remove("test.db")
 	var err error
-	store, err = mesondb.Open("test.db", 0666, nil)
+	store, err = ldb.Open("test.db", 0666, nil)
 	if err != nil {
 		log.Println("bolthold can't open")
 	}
@@ -295,8 +296,8 @@ func Test_checkIndexBucket(t *testing.T) {
 		for k, v := c.First(); k != nil; k, v = c.Next() {
 			var key string
 			var value [][]byte
-			mesondb.DefaultDecode(k, &key)
-			mesondb.DefaultDecode(v, &value)
+			ldb.DefaultDecode(k, &key)
+			ldb.DefaultDecode(v, &value)
 			log.Println("key:", key, "value:", value)
 		}
 
@@ -305,8 +306,8 @@ func Test_checkIndexBucket(t *testing.T) {
 		for k, v := c.First(); k != nil; k, v = c.Next() {
 			var key int64
 			var value [][]byte
-			mesondb.DefaultDecode(k, &key)
-			mesondb.DefaultDecode(v, &value)
+			ldb.DefaultDecode(k, &key)
+			ldb.DefaultDecode(v, &value)
 			log.Println("key:", key, "value:", value)
 		}
 
@@ -315,8 +316,8 @@ func Test_checkIndexBucket(t *testing.T) {
 		for k, v := c.First(); k != nil; k, v = c.Next() {
 			var key float64
 			var value [][]byte
-			mesondb.DefaultDecode(k, &key)
-			mesondb.DefaultDecode(v, &value)
+			ldb.DefaultDecode(k, &key)
+			ldb.DefaultDecode(v, &value)
 			log.Println("key:", key, "value:", value)
 		}
 
@@ -326,7 +327,7 @@ func Test_checkIndexBucket(t *testing.T) {
 
 func Test_useSimpleKeyValue(t *testing.T) {
 	var err error
-	store, err = mesondb.Open("test.db", 0666, nil)
+	store, err = ldb.Open("test.db", 0666, nil)
 	if err != nil {
 		log.Println("bolthold can't open")
 	}
@@ -340,7 +341,7 @@ func Test_useSimpleKeyValue(t *testing.T) {
 		bkt, _ := tx.CreateBucketIfNotExists([]byte("kvbuckt"))
 
 		for k, v := range setV {
-			vb, err := mesondb.DefaultEncode(v)
+			vb, err := ldb.DefaultEncode(v)
 			if err != nil {
 				log.Println(err)
 			} else {
@@ -356,7 +357,7 @@ func Test_useSimpleKeyValue(t *testing.T) {
 		for _, v := range keys {
 			v1 := bkt.Get([]byte(v))
 			var vv1 int
-			err := mesondb.DefaultDecode(v1, &vv1)
+			err := ldb.DefaultDecode(v1, &vv1)
 			if err != nil {
 				log.Println(err)
 			} else {
@@ -369,7 +370,7 @@ func Test_useSimpleKeyValue(t *testing.T) {
 
 func Test_reindex(t *testing.T) {
 	var err error
-	store, err = mesondb.Open("test.db", 0666, nil)
+	store, err = ldb.Open("test.db", 0666, nil)
 	if err != nil {
 		log.Println("bolthold can't open")
 	}

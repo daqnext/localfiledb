@@ -1,4 +1,4 @@
-package meson_bolt_localdb
+package localfiledb
 
 import (
 	"errors"

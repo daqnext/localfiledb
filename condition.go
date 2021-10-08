@@ -1,4 +1,4 @@
-package meson_bolt_localdb
+package localfiledb
 
 import (
 	"bytes"
@@ -36,6 +36,7 @@ type EqualCondition struct {
 
 type RangeCondition struct {
 	RangePair []*ValuePair
+	Err       error
 }
 type ValuePair struct {
 	LeftValue      []byte
@@ -58,6 +59,22 @@ func (vp *ValuePair) rightIsEnd() bool {
 	return false
 }
 
+func Lt(value interface{}) *RangeCondition {
+
+}
+
+func Le(value interface{}) *RangeCondition {
+
+}
+
+func Gt(value interface{}) *RangeCondition {
+
+}
+
+func Ge(value interface{}) *RangeCondition {
+
+}
+
 func VPair(min interface{}, minInclude bool, max interface{}, maxInclude bool) *RangeCondition {
 	bc := &ValuePair{}
 	if min == nil {
@@ -66,7 +83,11 @@ func VPair(min interface{}, minInclude bool, max interface{}, maxInclude bool) *
 	} else {
 		lv, err := DefaultEncode(min)
 		if err != nil {
-			//TODO handle error
+			//save error
+			return &RangeCondition{
+				RangePair: []*ValuePair{}, //empty RangeCondition
+				Err:       err,
+			}
 		}
 		bc.LeftValue = lv
 		bc.IsLeftInclude = minInclude
@@ -78,7 +99,11 @@ func VPair(min interface{}, minInclude bool, max interface{}, maxInclude bool) *
 	} else {
 		rv, err := DefaultEncode(max)
 		if err != nil {
-			//TODO handle error
+			//save error
+			return &RangeCondition{
+				RangePair: []*ValuePair{}, //empty RangeCondition
+				Err:       err,
+			}
 		}
 		bc.RightValue = rv
 		bc.IsRightInclude = maxInclude
@@ -105,6 +130,26 @@ func VPair(min interface{}, minInclude bool, max interface{}, maxInclude bool) *
 }
 
 func (bc *RangeCondition) And(b *RangeCondition) *RangeCondition {
+	if bc.Err != nil {
+		return &RangeCondition{
+			RangePair: []*ValuePair{}, //empty RangeCondition
+			Err:       bc.Err,
+		}
+	}
+
+	if b == nil {
+		return &RangeCondition{
+			RangePair: []*ValuePair{}, //empty RangeCondition
+		}
+	}
+
+	if b.Err != nil {
+		return &RangeCondition{
+			RangePair: []*ValuePair{}, //empty RangeCondition
+			Err:       b.Err,
+		}
+	}
+
 	if len(bc.RangePair) == 0 || len(b.RangePair) == 0 {
 		return &RangeCondition{
 			RangePair: []*ValuePair{}, //empty RangeCondition
@@ -162,6 +207,24 @@ func vPairCompare(r1, r2 *ValuePair) int {
 }
 
 func (bc *RangeCondition) Or(b *RangeCondition) *RangeCondition {
+	if bc.Err != nil {
+		return &RangeCondition{
+			RangePair: []*ValuePair{}, //empty RangeCondition
+			Err:       bc.Err,
+		}
+	}
+
+	if b == nil {
+		return bc
+	}
+
+	if b.Err != nil {
+		return &RangeCondition{
+			RangePair: []*ValuePair{}, //empty RangeCondition
+			Err:       b.Err,
+		}
+	}
+
 	if len(bc.RangePair) == 0 {
 		return b
 	}

@@ -1,4 +1,4 @@
-module github.com/daqnext/meson-bolt-localdb
+module github.com/daqnext/localfiledb
 
 go 1.17
 
