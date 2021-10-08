@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"sync"
 	"testing"
 )
 
@@ -145,7 +146,7 @@ func Test_queryGet(t *testing.T) {
 	log.Println("query by primary key")
 	var infos []*FileInfoWithIndex
 	//KeyQuery
-	qc = ldb.Le("10").Or((ldb.Ge("20")).And(ldb.Lt("30")))
+	qc = ldb.Ge("20").And(ldb.Le("20"))
 	q = ldb.KeyQuery().Range(qc)
 	err = store.Find(&infos, q)
 	if err != nil {
@@ -168,17 +169,17 @@ func Test_queryGet(t *testing.T) {
 		log.Println(v)
 	}
 
-	//log.Println("query by some index")
-	//var infos3 []FileInfoWithIndex
-	//q = ldb.IndexQuery("Rate").Range(ldb.VPair(float64(-20), true, float64(20), true))
-	//err = store.Find(&infos3, q)
-	//if err != nil {
-	//	log.Println(err)
-	//}
-	//for _, v := range infos3 {
-	//	log.Println(v)
-	//}
-	//
+	log.Println("query by some index")
+	var infos3 []FileInfoWithIndex
+	q = ldb.IndexQuery("Rate").Range(ldb.VPair(float64(-20), true, float64(20), true))
+	err = store.Find(&infos3, q)
+	if err != nil {
+		log.Println(err)
+	}
+	for _, v := range infos3 {
+		log.Println(v)
+	}
+
 	//log.Println("query by some index without range")
 	//var infos4 []FileInfoWithIndex
 	//q = ldb.IndexQuery("Rate").Offset(10).Limit(10)
@@ -379,4 +380,149 @@ func Test_reindex(t *testing.T) {
 	}
 
 	store.RemoveIndex(&FileInfoWithIndex{}, "FileSize")
+}
+
+func mixUsage(round int) {
+	for j := 0; j < 100; j++ {
+		log.Println("start round ", j+1)
+
+		//insert
+		err := store.Bolt().Update(func(tx *bbolt.Tx) error {
+			for i := 0; i < 10000; i++ {
+				hashKey := fmt.Sprintf("%d", round*1000000+j*10000+i)
+				bindName := fmt.Sprintf("bindname-%01d", rand.Intn(10000))
+				p := &Pointer{"pointName"}
+				fileInfo := FileInfoWithIndex{
+					BindName:       bindName,
+					LastAccessTime: int64(rand.Intn(100000)),
+					FileSize:       int64(rand.Intn(1000000)),
+					Rate:           float64(rand.Intn(100000))*0.33 - 15000,
+					P:              p,
+				}
+
+				err := store.TxUpsert(tx, hashKey, fileInfo)
+				if err != nil {
+					log.Println("TxInsert err", err)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			log.Println("Update err", err)
+		}
+
+		//query
+		qc := ldb.Gt(int64(10000)).And(ldb.Lt(int64(20000)))
+		q := ldb.IndexQuery("LastAccessTime").Range(qc).Limit(1000).Offset(1000)
+		var info []*FileInfoWithIndex
+		err = store.Find(&info, q)
+		if err != nil {
+			log.Println("query find err", err)
+		}
+
+		//update
+		l := fmt.Sprintf("%d", rand.Intn(1000000)+1000000)
+		r := fmt.Sprintf("%d", rand.Intn(2000000)+2000000)
+		qc = ldb.Gt(l).And(ldb.Lt(r))
+		q = ldb.KeyQuery().Range(qc).Limit(1000).Offset(1000).Desc()
+		err = store.UpdateMatching(&FileInfoWithIndex{}, q, func(record interface{}) error {
+			v, ok := record.(*FileInfoWithIndex)
+			if !ok {
+				log.Println("interface{} trans error")
+			}
+			v.FileSize = 999
+			return nil
+		})
+		if err != nil {
+			log.Println("query UpdateMatching err", err)
+		}
+
+		//delete
+		q = ldb.IndexQuery("Rate").Range(ldb.Ge(float64(-1000)).And(ldb.Le(float64(1000)))).Limit(1000)
+		err = store.DeleteMatching(&FileInfoWithIndex{}, q)
+		if err != nil {
+			log.Println("query DeleteMatching err", err)
+		}
+	}
+}
+
+func Test_M(t *testing.T) {
+	logFile, _ := os.Create("./log")
+	log.SetOutput(logFile)
+
+	os.Remove("test.db")
+	var err error
+	store, err = ldb.Open("test.db", 0666, nil)
+	if err != nil {
+		log.Println("bolthold can't open")
+	}
+
+	wg := &sync.WaitGroup{}
+	wg.Add(10)
+	for i := 0; i < 10; i++ {
+		j := i
+		go func() {
+			mixUsage(j)
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+	log.Println("finish")
+}
+
+func Test_subBucket(t *testing.T) {
+	os.Remove("test.db")
+	var err error
+	store, err = ldb.Open("test.db", 0666, nil)
+	if err != nil {
+		log.Println("bolthold can't open")
+	}
+
+	store.Bolt().Update(func(tx *bbolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists([]byte("some bindname"))
+		return err
+	})
+
+	store.Bolt().Update(func(tx *bbolt.Tx) error {
+		bkt, err := tx.CreateBucketIfNotExists([]byte("some bindname"))
+		if err != nil {
+			return err
+		}
+
+		hashKey := fmt.Sprintf("%d", 1)
+		bindName := fmt.Sprintf("bindname-%01d", rand.Intn(10000))
+		p := &Pointer{"pointName"}
+		fileInfo := FileInfoWithIndex{
+			BindName:       bindName,
+			LastAccessTime: int64(rand.Intn(100000)),
+			FileSize:       int64(rand.Intn(1000000)),
+			Rate:           float64(rand.Intn(100000))*0.33 - 15000,
+			P:              p,
+		}
+		err = store.UpsertBucket(bkt, hashKey, fileInfo)
+		if err != nil {
+			return err
+		}
+
+		var result FileInfoWithIndex
+		err = store.GetFromBucket(bkt, "1", &result)
+		if err != nil {
+			return err
+		}
+
+		log.Println(result)
+
+		var result2 []*FileInfoWithIndex
+		q := ldb.KeyQuery().Range(ldb.Gt("0").And(ldb.Lt("10")))
+		err = store.FindInBucket(bkt, &result2, q)
+		if err != nil {
+			return err
+		}
+		for _, v := range result2 {
+			log.Println(v)
+		}
+
+		return nil
+	})
 }

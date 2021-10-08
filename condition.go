@@ -2,17 +2,19 @@ package localfiledb
 
 import (
 	"bytes"
+	"errors"
+	"reflect"
 )
 
 type Operator int
 
-const (
-//opEq Operator = iota
-//OpGt
-//OpGe
-//OpLt
-//OpLe
-)
+//const (
+////opEq Operator = iota
+////OpGt
+////OpGe
+////OpLt
+////OpLe
+//)
 
 const rangeStart = "RangeStart"
 const rangeEnd = "RangeEnd"
@@ -30,24 +32,25 @@ type EqualCondition struct {
 
 type RangeCondition struct {
 	RangePair []*ValuePair
+	ValueType reflect.Type
 	Err       error
 }
 type ValuePair struct {
-	LeftValue      []byte
+	LeftValueByte  []byte
 	IsLeftInclude  bool
-	RightValue     []byte
+	RightValueByte []byte
 	IsRightInclude bool
 }
 
 func (vp *ValuePair) leftIsStart() bool {
-	if bytes.Equal(vp.LeftValue, []byte(rangeStart)) {
+	if bytes.Equal(vp.LeftValueByte, []byte(rangeStart)) {
 		return true
 	}
 	return false
 }
 
 func (vp *ValuePair) rightIsEnd() bool {
-	if bytes.Equal(vp.RightValue, []byte(rangeEnd)) {
+	if bytes.Equal(vp.RightValueByte, []byte(rangeEnd)) {
 		return true
 	}
 	return false
@@ -64,14 +67,17 @@ func Lt(value interface{}) *RangeCondition {
 		}
 	}
 
-	bc.LeftValue = []byte(rangeStart)
+	//bc.LeftValue = rangeStart
+	bc.LeftValueByte = []byte(rangeStart)
 	bc.IsLeftInclude = true
 
-	bc.RightValue = v
+	//bc.RightValue = value
+	bc.RightValueByte = v
 	bc.IsRightInclude = false
 
 	return &RangeCondition{
 		RangePair: []*ValuePair{bc},
+		ValueType: reflect.TypeOf(value),
 	}
 }
 
@@ -86,14 +92,17 @@ func Le(value interface{}) *RangeCondition {
 		}
 	}
 
-	bc.LeftValue = []byte(rangeStart)
+	//bc.LeftValue = rangeStart
+	bc.LeftValueByte = []byte(rangeStart)
 	bc.IsLeftInclude = true
 
-	bc.RightValue = v
+	//bc.RightValue = value
+	bc.RightValueByte = v
 	bc.IsRightInclude = true
 
 	return &RangeCondition{
 		RangePair: []*ValuePair{bc},
+		ValueType: reflect.TypeOf(value),
 	}
 }
 
@@ -108,14 +117,17 @@ func Gt(value interface{}) *RangeCondition {
 		}
 	}
 
-	bc.LeftValue = lv
+	//bc.LeftValue = value
+	bc.LeftValueByte = lv
 	bc.IsLeftInclude = false
 
-	bc.RightValue = []byte(rangeEnd)
+	//bc.RightValue=rangeEnd
+	bc.RightValueByte = []byte(rangeEnd)
 	bc.IsRightInclude = true
 
 	return &RangeCondition{
 		RangePair: []*ValuePair{bc},
+		ValueType: reflect.TypeOf(value),
 	}
 }
 
@@ -130,21 +142,26 @@ func Ge(value interface{}) *RangeCondition {
 		}
 	}
 
-	bc.LeftValue = lv
+	//bc.LeftValue = value
+	bc.LeftValueByte = lv
 	bc.IsLeftInclude = true
 
-	bc.RightValue = []byte(rangeEnd)
+	//bc.RightValue=rangeEnd
+	bc.RightValueByte = []byte(rangeEnd)
 	bc.IsRightInclude = true
 
 	return &RangeCondition{
 		RangePair: []*ValuePair{bc},
+		ValueType: reflect.TypeOf(value),
 	}
 }
 
 func VPair(min interface{}, minInclude bool, max interface{}, maxInclude bool) *RangeCondition {
 	bc := &ValuePair{}
+	var t reflect.Type
 	if min == nil {
-		bc.LeftValue = []byte(rangeStart)
+		//bc.LeftValue=rangeStart
+		bc.LeftValueByte = []byte(rangeStart)
 		bc.IsLeftInclude = true
 	} else {
 		lv, err := DefaultEncode(min)
@@ -155,12 +172,15 @@ func VPair(min interface{}, minInclude bool, max interface{}, maxInclude bool) *
 				Err:       err,
 			}
 		}
-		bc.LeftValue = lv
+		//bc.LeftValue = min
+		bc.LeftValueByte = lv
 		bc.IsLeftInclude = minInclude
+		t = reflect.TypeOf(min)
 	}
 
 	if max == nil {
-		bc.RightValue = []byte(rangeEnd)
+		//bc.RightValue=rangeEnd
+		bc.RightValueByte = []byte(rangeEnd)
 		bc.IsRightInclude = true
 	} else {
 		rv, err := DefaultEncode(max)
@@ -171,18 +191,26 @@ func VPair(min interface{}, minInclude bool, max interface{}, maxInclude bool) *
 				Err:       err,
 			}
 		}
-		bc.RightValue = rv
+		//bc.RightValue=max
+		bc.RightValueByte = rv
 		bc.IsRightInclude = maxInclude
+		t = reflect.TypeOf(max)
 	}
 
 	if min != nil && max != nil {
-		if bytes.Compare(bc.LeftValue, bc.RightValue) > 0 {
+		if reflect.TypeOf(min) != reflect.TypeOf(max) {
+			return &RangeCondition{
+				RangePair: []*ValuePair{}, //empty RangeCondition
+				Err:       errors.New("query vpair value type different"),
+			}
+		}
+		if bytes.Compare(bc.LeftValueByte, bc.RightValueByte) > 0 {
 			return &RangeCondition{
 				RangePair: []*ValuePair{}, //empty RangeCondition
 			}
 		}
 
-		if bytes.Compare(bc.LeftValue, bc.RightValue) == 0 && (!bc.IsRightInclude || !bc.IsLeftInclude) {
+		if bytes.Compare(bc.LeftValueByte, bc.RightValueByte) == 0 && (!bc.IsRightInclude || !bc.IsLeftInclude) {
 			return &RangeCondition{
 				RangePair: []*ValuePair{}, //empty RangeCondition
 			}
@@ -192,6 +220,7 @@ func VPair(min interface{}, minInclude bool, max interface{}, maxInclude bool) *
 
 	return &RangeCondition{
 		RangePair: []*ValuePair{bc},
+		ValueType: t,
 	}
 }
 
@@ -216,6 +245,13 @@ func (bc *RangeCondition) And(b *RangeCondition) *RangeCondition {
 		}
 	}
 
+	if bc.ValueType != b.ValueType {
+		return &RangeCondition{
+			RangePair: []*ValuePair{}, //empty RangeCondition
+			Err:       errors.New("condition value type different"),
+		}
+	}
+
 	if len(bc.RangePair) == 0 || len(b.RangePair) == 0 {
 		return &RangeCondition{
 			RangePair: []*ValuePair{}, //empty RangeCondition
@@ -233,8 +269,14 @@ func (bc *RangeCondition) And(b *RangeCondition) *RangeCondition {
 		}
 	}
 
+	vType := bc.ValueType
+	if vType == nil {
+		vType = b.ValueType
+	}
+
 	return &RangeCondition{
 		RangePair: resultPair,
+		ValueType: vType,
 	}
 }
 
@@ -259,12 +301,12 @@ func vPairCompare(r1, r2 *ValuePair) int {
 	}
 
 	//r1.right  r2.left
-	if bytes.Compare(r1.RightValue, r2.LeftValue) < 0 {
+	if bytes.Compare(r1.RightValueByte, r2.LeftValueByte) < 0 {
 		return -1
 	}
 
 	//r2.right r1.left
-	if bytes.Compare(r2.RightValue, r1.LeftValue) < 0 {
+	if bytes.Compare(r2.RightValueByte, r1.LeftValueByte) < 0 {
 		return 1
 	}
 
@@ -296,6 +338,13 @@ func (bc *RangeCondition) Or(b *RangeCondition) *RangeCondition {
 	}
 	if len(b.RangePair) == 0 {
 		return bc
+	}
+
+	if bc.ValueType != b.ValueType {
+		return &RangeCondition{
+			RangePair: []*ValuePair{}, //empty RangeCondition
+			Err:       errors.New("condition value type different"),
+		}
 	}
 
 	index1 := 0
@@ -366,6 +415,7 @@ func (bc *RangeCondition) Or(b *RangeCondition) *RangeCondition {
 	resultRange = append(resultRange, tempVPair)
 	return &RangeCondition{
 		RangePair: resultRange,
+		ValueType: bc.ValueType,
 	}
 }
 
@@ -384,23 +434,31 @@ func (vp *ValuePair) or(p *ValuePair) *RangeCondition {
 	} else if !v1.leftIsStart() && v2.leftIsStart() {
 		//swap
 		v1, v2 = v2, v1
-	} else if bytes.Compare(v1.LeftValue, v2.LeftValue) > 0 {
+	} else if bytes.Compare(v1.LeftValueByte, v2.LeftValueByte) > 0 {
 		v1, v2 = v2, v1
 	}
 
-	//
-	if (!v1.rightIsEnd() && !v2.leftIsStart()) && bytes.Compare(v1.RightValue, v2.LeftValue) < 0 {
-		return &RangeCondition{
-			RangePair: []*ValuePair{v1, v2}, //empty RangeCondition
+	if !v1.rightIsEnd() && !v2.leftIsStart() {
+		if bytes.Compare(v1.RightValueByte, v2.LeftValueByte) < 0 {
+			return &RangeCondition{
+				RangePair: []*ValuePair{v1, v2},
+			}
+		}
+
+		if bytes.Compare(v1.RightValueByte, v2.LeftValueByte) == 0 && (v1.IsRightInclude == false && v2.IsLeftInclude == false) {
+			return &RangeCondition{
+				RangePair: []*ValuePair{v1, v2},
+			}
 		}
 	}
 
 	newPair := &ValuePair{}
-	newPair.LeftValue = v1.LeftValue
+	//newPair.LeftValue = v1.LeftValue
+	newPair.LeftValueByte = v1.LeftValueByte
 	newPair.IsLeftInclude = v1.IsLeftInclude
 
 	// if v1.left==v2.left but all not start
-	if bytes.Compare(v1.LeftValue, v2.LeftValue) == 0 && (!v1.leftIsStart() && !v2.leftIsStart()) {
+	if bytes.Compare(v1.LeftValueByte, v2.LeftValueByte) == 0 && (!v1.leftIsStart() && !v2.leftIsStart()) {
 		if v1.IsLeftInclude || v2.IsLeftInclude {
 			newPair.IsLeftInclude = true
 		} else {
@@ -409,7 +467,8 @@ func (vp *ValuePair) or(p *ValuePair) *RangeCondition {
 	}
 
 	if v2.rightIsEnd() {
-		newPair.RightValue = v2.RightValue
+		//newPair.RightValue = v2.RightValue
+		newPair.RightValueByte = v2.RightValueByte
 		newPair.IsRightInclude = v2.IsRightInclude
 
 		return &RangeCondition{
@@ -418,7 +477,8 @@ func (vp *ValuePair) or(p *ValuePair) *RangeCondition {
 	}
 
 	if v1.rightIsEnd() {
-		newPair.RightValue = v1.RightValue
+		//newPair.RightValue = v1.RightValue
+		newPair.RightValueByte = v1.RightValueByte
 		newPair.IsRightInclude = v1.IsRightInclude
 
 		return &RangeCondition{
@@ -426,23 +486,25 @@ func (vp *ValuePair) or(p *ValuePair) *RangeCondition {
 		}
 	}
 
-	result := bytes.Compare(v1.RightValue, v2.RightValue)
+	result := bytes.Compare(v1.RightValueByte, v2.RightValueByte)
 	if result < 0 {
-		newPair.RightValue = v2.RightValue
+		//newPair.RightValue = v2.RightValue
+		newPair.RightValueByte = v2.RightValueByte
 		newPair.IsRightInclude = v2.IsRightInclude
 
 		return &RangeCondition{
 			RangePair: []*ValuePair{newPair},
 		}
 	} else if result > 0 {
-		newPair.RightValue = v1.RightValue
+		//newPair.RightValue = v1.RightValue
+		newPair.RightValueByte = v1.RightValueByte
 		newPair.IsRightInclude = v1.IsRightInclude
 
 		return &RangeCondition{
 			RangePair: []*ValuePair{newPair},
 		}
 	} else {
-		newPair.RightValue = v1.RightValue
+		//newPair.RightValue = v1.RightValue
 		if v1.IsRightInclude || v2.IsRightInclude {
 			newPair.IsRightInclude = true
 		} else {
@@ -471,23 +533,24 @@ func (vp *ValuePair) and(p *ValuePair) *RangeCondition {
 	} else if !v1.leftIsStart() && v2.leftIsStart() {
 		//swap
 		v1, v2 = v2, v1
-	} else if bytes.Compare(v1.LeftValue, v2.LeftValue) > 0 {
+	} else if bytes.Compare(v1.LeftValueByte, v2.LeftValueByte) > 0 {
 		v1, v2 = v2, v1
 	}
 
 	//
-	if (!v1.rightIsEnd() && !v2.leftIsStart()) && bytes.Compare(v1.RightValue, v2.LeftValue) < 0 {
+	if (!v1.rightIsEnd() && !v2.leftIsStart()) && bytes.Compare(v1.RightValueByte, v2.LeftValueByte) < 0 {
 		return &RangeCondition{
 			RangePair: []*ValuePair{}, //empty RangeCondition
 		}
 	}
 
 	newPair := &ValuePair{}
-	newPair.LeftValue = v2.LeftValue
+	//newPair.LeftValue = v2.LeftValue
+	newPair.LeftValueByte = v2.LeftValueByte
 	newPair.IsLeftInclude = v2.IsLeftInclude
 
 	// if v1.left==v2.left but all not start
-	if bytes.Compare(v1.LeftValue, v2.LeftValue) == 0 && (!v1.leftIsStart() && !v2.leftIsStart()) {
+	if bytes.Compare(v1.LeftValueByte, v2.LeftValueByte) == 0 && (!v1.leftIsStart() && !v2.leftIsStart()) {
 		if v1.IsLeftInclude && v2.IsLeftInclude {
 			newPair.IsLeftInclude = true
 		} else {
@@ -496,49 +559,77 @@ func (vp *ValuePair) and(p *ValuePair) *RangeCondition {
 	}
 
 	if v2.rightIsEnd() {
-		newPair.RightValue = v1.RightValue
+		//newPair.RightValue = v1.RightValue
+		newPair.RightValueByte = v1.RightValueByte
 		newPair.IsRightInclude = v1.IsRightInclude
 
+		if bytes.Compare(newPair.LeftValueByte, newPair.RightValueByte) == 0 && (newPair.IsLeftInclude == false || newPair.IsRightInclude == false) {
+			return &RangeCondition{
+				RangePair: []*ValuePair{},
+			}
+		}
 		return &RangeCondition{
 			RangePair: []*ValuePair{newPair},
 		}
 	}
 
 	if v1.rightIsEnd() {
-		newPair.RightValue = v2.RightValue
+		//newPair.RightValue = v2.RightValue
+		newPair.RightValueByte = v2.RightValueByte
 		newPair.IsRightInclude = v2.IsRightInclude
 
+		if bytes.Compare(newPair.LeftValueByte, newPair.RightValueByte) == 0 && (newPair.IsLeftInclude == false || newPair.IsRightInclude == false) {
+			return &RangeCondition{
+				RangePair: []*ValuePair{},
+			}
+		}
 		return &RangeCondition{
 			RangePair: []*ValuePair{newPair},
 		}
 	}
 
-	result := bytes.Compare(v1.RightValue, v2.RightValue)
+	result := bytes.Compare(v1.RightValueByte, v2.RightValueByte)
 	if result < 0 {
-		newPair.RightValue = v1.RightValue
+		//newPair.RightValue = v1.RightValue
+		newPair.RightValueByte = v1.RightValueByte
 		newPair.IsRightInclude = v1.IsRightInclude
 
+		if bytes.Compare(newPair.LeftValueByte, newPair.RightValueByte) == 0 && (newPair.IsLeftInclude == false || newPair.IsRightInclude == false) {
+			return &RangeCondition{
+				RangePair: []*ValuePair{},
+			}
+		}
 		return &RangeCondition{
 			RangePair: []*ValuePair{newPair},
 		}
 	} else if result > 0 {
-		newPair.RightValue = v2.RightValue
+		//newPair.RightValue = v2.RightValue
+		newPair.RightValueByte = v2.RightValueByte
 		newPair.IsRightInclude = v2.IsRightInclude
 
+		if bytes.Compare(newPair.LeftValueByte, newPair.RightValueByte) == 0 && (newPair.IsLeftInclude == false || newPair.IsRightInclude == false) {
+			return &RangeCondition{
+				RangePair: []*ValuePair{},
+			}
+		}
 		return &RangeCondition{
 			RangePair: []*ValuePair{newPair},
 		}
 	} else {
-		newPair.RightValue = v1.RightValue
+		//newPair.RightValue = v1.RightValue
 		if v1.IsRightInclude && v2.IsRightInclude {
 			newPair.IsRightInclude = true
 		} else {
 			newPair.IsRightInclude = false
 		}
 
+		if bytes.Compare(newPair.LeftValueByte, newPair.RightValueByte) == 0 && (newPair.IsLeftInclude == false || newPair.IsRightInclude == false) {
+			return &RangeCondition{
+				RangePair: []*ValuePair{},
+			}
+		}
 		return &RangeCondition{
 			RangePair: []*ValuePair{newPair},
 		}
 	}
-
 }

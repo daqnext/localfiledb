@@ -24,9 +24,9 @@ func (s *Store) TxGet(tx *bolt.Tx, key, result interface{}) error {
 }
 
 // GetFromBucket allows you to specify the parent bucket for retrieving records
-//func (s *Store) GetFromBucket(parent *bolt.Bucket, key, result interface{}) error {
-//	return s.get(parent, key, result)
-//}
+func (s *Store) GetFromBucket(parent *bolt.Bucket, key, result interface{}) error {
+	return s.get(parent, key, result)
+}
 
 func (s *Store) get(source BucketSource, key, result interface{}) error {
 	storer := s.newStorer(result)
@@ -92,9 +92,9 @@ func (s *Store) TxFind(tx *bolt.Tx, result interface{}, query *Query) error {
 }
 
 // FindInBucket allows you to specify a parent bucke to search in
-//func (s *Store) FindInBucket(parent *bolt.Bucket, result interface{}, query *Query) error {
-//	return s.findQuery(parent, result, query)
-//}
+func (s *Store) FindInBucket(parent *bolt.Bucket, result interface{}, query *Query) error {
+	return s.findQuery(parent, result, query)
+}
 
 // FindOne returns a single record, and so result is NOT a slice, but an pointer to a struct, if no record is found
 // that matches the query, then it returns ErrNotFound
@@ -110,9 +110,9 @@ func (s *Store) TxFindOne(tx *bolt.Tx, result interface{}, query *Query) error {
 }
 
 // FindOneInBucket allows you to pass in your own bucket to retrieve a single record from the bolthold
-//func (s *Store) FindOneInBucket(parent *bolt.Bucket, result interface{}, query *Query) error {
-//	return s.findOneQuery(parent, result, query)
-//}
+func (s *Store) FindOneInBucket(parent *bolt.Bucket, result interface{}, query *Query) error {
+	return s.findOneQuery(parent, result, query)
+}
 
 // Count returns the current record count for the passed in datatype
 func (s *Store) Count(dataType interface{}, query *Query) (int, error) {
@@ -131,6 +131,6 @@ func (s *Store) TxCount(tx *bolt.Tx, dataType interface{}, query *Query) (int, e
 }
 
 // CountInBucket returns the current record count from within the given parent bucket
-//func (s *Store) CountInBucket(parent *bolt.Bucket, dataType interface{}, query *Query) (int, error) {
-//	return s.countQuery(parent, dataType, query)
-//}
+func (s *Store) CountInBucket(parent *bolt.Bucket, dataType interface{}, query *Query) (int, error) {
+	return s.countQuery(parent, dataType, query)
+}

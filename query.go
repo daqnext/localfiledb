@@ -83,7 +83,7 @@ func (q *Query) Desc() *Query {
 	return q
 }
 
-func checkQuery(q **Query) error {
+func checkQuery(q **Query, dataType interface{}) error {
 	if *q == nil {
 		*q = &Query{}
 	}
@@ -95,6 +95,41 @@ func checkQuery(q **Query) error {
 
 	if (*q).queryType != QueryEqual && (*q).queryType != QueryRange {
 		return errors.New("query type error, only Range or Equal supported")
+	}
+
+	//index type
+	var tp reflect.Type
+	resultVal := reflect.ValueOf(dataType)
+	if resultVal.Elem().Kind() != reflect.Slice && resultVal.Kind() == reflect.Ptr {
+		tp = resultVal.Type().Elem()
+	} else if resultVal.Elem().Kind() == reflect.Slice {
+		sliceVal := resultVal.Elem()
+		tp = sliceVal.Type().Elem()
+	} else {
+		tp = reflect.TypeOf(resultVal)
+	}
+
+	for tp.Kind() == reflect.Ptr {
+		tp = tp.Elem()
+	}
+	//for autofill KeyField in struct
+	var keyType reflect.Type
+	//var keyField string
+
+	if (*q).index == "" {
+		for i := 0; i < tp.NumField(); i++ {
+			if strings.Contains(string(tp.Field(i).Tag), BoltholdKeyTag) {
+				keyType = tp.Field(i).Type
+				//keyField = tp.Field(i).Name
+				break
+			}
+		}
+	} else {
+		filed, ok := tp.FieldByName((*q).index)
+		if !ok {
+			return errors.New("index field not exist")
+		}
+		keyType = filed.Type
 	}
 
 	if (*q).queryType == QueryEqual {
@@ -110,18 +145,28 @@ func checkQuery(q **Query) error {
 			return (*q).equalCondition.Err
 		}
 
+		//check index type and value type
+		if reflect.TypeOf((*q).equalCondition.value) != keyType {
+			return errors.New("value type is different from index type")
+		}
 	}
 
 	if (*q).queryType == QueryRange {
 		if (*q).rangeCondition == nil {
 			return errors.New("range is empty")
 		}
-		if len((*q).rangeCondition.RangePair) == 0 {
-			return errors.New("range is empty")
-		}
 
 		if (*q).rangeCondition.Err != nil {
 			return (*q).rangeCondition.Err
+		}
+
+		//check index type and value type
+		if (*q).rangeCondition.ValueType != nil && (*q).rangeCondition.ValueType != keyType {
+			return errors.New("value type is different from index type")
+		}
+
+		if len((*q).rangeCondition.RangePair) == 0 {
+			return errors.New("range is empty")
 		}
 	}
 
@@ -145,7 +190,7 @@ func (s *Store) findOneQuery(source BucketSource, result interface{}, query *Que
 }
 
 func (s *Store) updateQuery(source BucketSource, dataType interface{}, query *Query, update func(record interface{}) error) error {
-	err := checkQuery(&query)
+	err := checkQuery(&query, dataType)
 	if err != nil {
 		return err
 	}
@@ -197,7 +242,7 @@ func (s *Store) updateQuery(source BucketSource, dataType interface{}, query *Qu
 }
 
 func (s *Store) deleteQuery(source BucketSource, dataType interface{}, query *Query) error {
-	err := checkQuery(&query)
+	err := checkQuery(&query, dataType)
 	if err != nil {
 		return err
 	}
@@ -234,7 +279,7 @@ func (s *Store) deleteQuery(source BucketSource, dataType interface{}, query *Qu
 }
 
 func (s *Store) countQuery(source BucketSource, dataType interface{}, query *Query) (int, error) {
-	err := checkQuery(&query)
+	err := checkQuery(&query, dataType)
 	if err != nil {
 		return 0, err
 	}
@@ -257,7 +302,7 @@ func (s *Store) countQuery(source BucketSource, dataType interface{}, query *Que
 }
 
 func (s *Store) findQuery(source BucketSource, result interface{}, query *Query) error {
-	err := checkQuery(&query)
+	err := checkQuery(&query, result)
 	if err != nil {
 		return err
 	}
@@ -273,11 +318,9 @@ func (s *Store) findQuery(source BucketSource, result interface{}, query *Query)
 	if sliceVal.Type().Elem().Kind() == reflect.Ptr {
 		isPointer = true
 	}
-	elType := sliceVal.Type().Elem()
+	tp := sliceVal.Type().Elem()
 
 	resultVal.Elem().Set(sliceVal.Slice(0, 0))
-
-	tp := elType
 
 	for tp.Kind() == reflect.Ptr {
 		tp = tp.Elem()
@@ -458,8 +501,8 @@ func rangeQuery(s *Store, c *bolt.Cursor, isQueryPrimaryKey bool, query *Query, 
 				return c.Last()
 			}
 
-			k, v := c.Seek(pair.RightValue)
-			if !pair.IsRightInclude && bytes.Equal(pair.RightValue, k) {
+			k, v := c.Seek(pair.RightValueByte)
+			if !pair.IsRightInclude && bytes.Equal(pair.RightValueByte, k) {
 				k, v = c.Prev()
 			}
 			return k, v
@@ -474,9 +517,9 @@ func rangeQuery(s *Store, c *bolt.Cursor, isQueryPrimaryKey bool, query *Query, 
 			}
 
 			if pair.IsLeftInclude {
-				return bytes.Compare(k, pair.LeftValue) >= 0
+				return bytes.Compare(k, pair.LeftValueByte) >= 0
 			} else {
-				return bytes.Compare(k, pair.LeftValue) > 0
+				return bytes.Compare(k, pair.LeftValueByte) > 0
 			}
 		}
 
@@ -490,22 +533,25 @@ func rangeQuery(s *Store, c *bolt.Cursor, isQueryPrimaryKey bool, query *Query, 
 				return c.First()
 			}
 
-			k, v := c.Seek(pair.LeftValue)
-			if !pair.IsLeftInclude && bytes.Equal(pair.LeftValue, k) {
+			k, v := c.Seek(pair.LeftValueByte)
+			if !pair.IsLeftInclude && bytes.Equal(pair.LeftValueByte, k) {
 				k, v = c.Next()
 			}
 			return k, v
 		}
 
 		forCondition = func(k []byte) bool {
+			if k == nil {
+				return false
+			}
 			if pair.rightIsEnd() {
 				return k != nil
 			}
 
 			if pair.IsRightInclude {
-				return bytes.Compare(k, pair.RightValue) <= 0
+				return bytes.Compare(k, pair.RightValueByte) <= 0
 			} else {
-				return bytes.Compare(k, pair.RightValue) < 0
+				return bytes.Compare(k, pair.RightValueByte) < 0
 			}
 		}
 
