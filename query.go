@@ -45,7 +45,8 @@ func (q *Query) Range(c *RangeCondition) *Query {
 
 func (q *Query) Equal(value interface{}) *Query {
 	q.queryType = QueryEqual
-	q.equalCondition = &EqualCondition{opEq, value}
+	v, err := DefaultEncode(value)
+	q.equalCondition = &EqualCondition{v, err}
 	return q
 }
 
@@ -105,6 +106,10 @@ func checkQuery(q **Query) error {
 			return errors.New("equal Criteria value is nil")
 		}
 
+		if (*q).equalCondition.Err != nil {
+			return (*q).equalCondition.Err
+		}
+
 	}
 
 	if (*q).queryType == QueryRange {
@@ -113,6 +118,10 @@ func checkQuery(q **Query) error {
 		}
 		if len((*q).rangeCondition.RangePair) == 0 {
 			return errors.New("range is empty")
+		}
+
+		if (*q).rangeCondition.Err != nil {
+			return (*q).rangeCondition.Err
 		}
 	}
 
@@ -130,8 +139,6 @@ func checkQuery(q **Query) error {
 func (s *Store) findOneQuery(source BucketSource, result interface{}, query *Query) error {
 	if query == nil {
 		query = &Query{}
-		query.queryType = QueryRange
-		//return errors.New("nil query condition")
 	}
 	query.Limit(1)
 	return s.findQuery(source, result, query)
@@ -262,6 +269,10 @@ func (s *Store) findQuery(source BucketSource, result interface{}, query *Query)
 	}
 
 	sliceVal := resultVal.Elem()
+	isPointer := false
+	if sliceVal.Type().Elem().Kind() == reflect.Ptr {
+		isPointer = true
+	}
 	elType := sliceVal.Type().Elem()
 
 	resultVal.Elem().Set(sliceVal.Slice(0, 0))
@@ -298,10 +309,10 @@ func (s *Store) findQuery(source BucketSource, result interface{}, query *Query)
 			if err != nil {
 				return err
 			}
-			rowValue := val.Elem()
+			//rowValue := val.Elem()
 
 			if keyType != nil {
-				rowKey := rowValue
+				rowKey := val.Elem()
 				for rowKey.Kind() == reflect.Ptr {
 					rowKey = rowKey.Elem()
 				}
@@ -311,8 +322,14 @@ func (s *Store) findQuery(source BucketSource, result interface{}, query *Query)
 				}
 			}
 
-			sliceVal = reflect.Append(sliceVal, rowValue)
+			if isPointer {
+				sliceVal = reflect.Append(sliceVal, val)
+			} else {
+				sliceVal = reflect.Append(sliceVal, val.Elem())
+			}
+
 		}
+		//resultVal.
 		resultVal.Elem().Set(sliceVal.Slice(0, sliceVal.Len()))
 		return nil
 	})

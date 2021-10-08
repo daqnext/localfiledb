@@ -74,7 +74,7 @@ func Test_uniqueIndexInsert(t *testing.T) {
 		}
 	}
 
-	var ss []SomeStruct
+	var ss []*SomeStruct
 	err = store.FindOne(&ss, nil)
 	if err != nil {
 		log.Println("FindOne query err", err)
@@ -143,12 +143,10 @@ func Test_queryGet(t *testing.T) {
 	_ = qc
 
 	log.Println("query by primary key")
-	var infos []FileInfoWithIndex
+	var infos []*FileInfoWithIndex
 	//KeyQuery
-
-	qc = ldb.VPair("10", true, "20", true).Or(ldb.VPair("50", true, "70", true)).Or(ldb.VPair("80", true, "90", true))
-	//qc = ldb.VPair("10", true, nil, true).And(ldb.VPair(nil, true, "30", true))
-	q = ldb.KeyQuery().Range(qc).Desc().Limit(10).Offset(10)
+	qc = ldb.Le("10").Or((ldb.Ge("20")).And(ldb.Lt("30")))
+	q = ldb.KeyQuery().Range(qc)
 	err = store.Find(&infos, q)
 	if err != nil {
 		log.Println(err)
@@ -158,10 +156,10 @@ func Test_queryGet(t *testing.T) {
 	}
 
 	log.Println("query by some index")
-	var infos2 []FileInfoWithIndex
+	var infos2 []*FileInfoWithIndex
 	//IndexQuery
 	qc = ldb.VPair(int64(-40), true, int64(-30), true).Or(ldb.VPair(int64(-10), true, int64(10), true)).Or(ldb.VPair(int64(30), true, int64(40), true))
-	q = ldb.IndexQuery("LastAccessTime").Range(qc).Limit(10).Offset(10)
+	q = ldb.IndexQuery("LastAccessTime").Range(qc).Limit(10).Offset(0)
 	err = store.Find(&infos2, q)
 	if err != nil {
 		log.Println(err)
@@ -170,38 +168,38 @@ func Test_queryGet(t *testing.T) {
 		log.Println(v)
 	}
 
-	log.Println("query by some index")
-	var infos3 []FileInfoWithIndex
-	q = ldb.IndexQuery("Rate").Range(ldb.VPair(float64(-20), true, float64(20), true))
-	err = store.Find(&infos3, q)
-	if err != nil {
-		log.Println(err)
-	}
-	for _, v := range infos3 {
-		log.Println(v)
-	}
-
-	log.Println("query by some index without range")
-	var infos4 []FileInfoWithIndex
-	q = ldb.IndexQuery("Rate").Offset(10).Limit(10)
-	err = store.Find(&infos4, q)
-	if err != nil {
-		log.Println(err)
-	}
-	for _, v := range infos4 {
-		log.Println(v)
-	}
-
-	log.Println("query by some index without range")
-	var infos5 []FileInfoWithIndex
-	q = ldb.IndexQuery("LastAccessTime").Equal(int64(20))
-	err = store.Find(&infos5, q)
-	if err != nil {
-		log.Println(err)
-	}
-	for _, v := range infos5 {
-		log.Println(v)
-	}
+	//log.Println("query by some index")
+	//var infos3 []FileInfoWithIndex
+	//q = ldb.IndexQuery("Rate").Range(ldb.VPair(float64(-20), true, float64(20), true))
+	//err = store.Find(&infos3, q)
+	//if err != nil {
+	//	log.Println(err)
+	//}
+	//for _, v := range infos3 {
+	//	log.Println(v)
+	//}
+	//
+	//log.Println("query by some index without range")
+	//var infos4 []FileInfoWithIndex
+	//q = ldb.IndexQuery("Rate").Offset(10).Limit(10)
+	//err = store.Find(&infos4, q)
+	//if err != nil {
+	//	log.Println(err)
+	//}
+	//for _, v := range infos4 {
+	//	log.Println(v)
+	//}
+	//
+	//log.Println("query by some index without range")
+	//var infos5 []FileInfoWithIndex
+	//q = ldb.IndexQuery("LastAccessTime").Equal(int64(20))
+	//err = store.Find(&infos5, q)
+	//if err != nil {
+	//	log.Println(err)
+	//}
+	//for _, v := range infos5 {
+	//	log.Println(v)
+	//}
 
 }
 

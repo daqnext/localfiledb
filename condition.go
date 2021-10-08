@@ -7,11 +7,11 @@ import (
 type Operator int
 
 const (
-	opEq Operator = iota
-	//OpGt
-	//OpGe
-	//OpLt
-	//OpLe
+//opEq Operator = iota
+//OpGt
+//OpGe
+//OpLt
+//OpLe
 )
 
 const rangeStart = "RangeStart"
@@ -23,16 +23,10 @@ const QueryRange QueryType = 1
 const QueryEqual QueryType = 2
 
 type EqualCondition struct {
-	op    Operator
+	//op    Operator
 	value interface{}
+	Err   error
 }
-
-//func Condition(op Operator, value interface{}) *EqualCondition {
-//	return &EqualCondition{
-//		op:    op,
-//		value: value,
-//	}
-//}
 
 type RangeCondition struct {
 	RangePair []*ValuePair
@@ -60,19 +54,91 @@ func (vp *ValuePair) rightIsEnd() bool {
 }
 
 func Lt(value interface{}) *RangeCondition {
+	bc := &ValuePair{}
+	v, err := DefaultEncode(value)
+	if err != nil {
+		//save error
+		return &RangeCondition{
+			RangePair: []*ValuePair{}, //empty RangeCondition
+			Err:       err,
+		}
+	}
 
+	bc.LeftValue = []byte(rangeStart)
+	bc.IsLeftInclude = true
+
+	bc.RightValue = v
+	bc.IsRightInclude = false
+
+	return &RangeCondition{
+		RangePair: []*ValuePair{bc},
+	}
 }
 
 func Le(value interface{}) *RangeCondition {
+	bc := &ValuePair{}
+	v, err := DefaultEncode(value)
+	if err != nil {
+		//save error
+		return &RangeCondition{
+			RangePair: []*ValuePair{}, //empty RangeCondition
+			Err:       err,
+		}
+	}
 
+	bc.LeftValue = []byte(rangeStart)
+	bc.IsLeftInclude = true
+
+	bc.RightValue = v
+	bc.IsRightInclude = true
+
+	return &RangeCondition{
+		RangePair: []*ValuePair{bc},
+	}
 }
 
 func Gt(value interface{}) *RangeCondition {
+	bc := &ValuePair{}
+	lv, err := DefaultEncode(value)
+	if err != nil {
+		//save error
+		return &RangeCondition{
+			RangePair: []*ValuePair{}, //empty RangeCondition
+			Err:       err,
+		}
+	}
 
+	bc.LeftValue = lv
+	bc.IsLeftInclude = false
+
+	bc.RightValue = []byte(rangeEnd)
+	bc.IsRightInclude = true
+
+	return &RangeCondition{
+		RangePair: []*ValuePair{bc},
+	}
 }
 
 func Ge(value interface{}) *RangeCondition {
+	bc := &ValuePair{}
+	lv, err := DefaultEncode(value)
+	if err != nil {
+		//save error
+		return &RangeCondition{
+			RangePair: []*ValuePair{}, //empty RangeCondition
+			Err:       err,
+		}
+	}
 
+	bc.LeftValue = lv
+	bc.IsLeftInclude = true
+
+	bc.RightValue = []byte(rangeEnd)
+	bc.IsRightInclude = true
+
+	return &RangeCondition{
+		RangePair: []*ValuePair{bc},
+	}
 }
 
 func VPair(min interface{}, minInclude bool, max interface{}, maxInclude bool) *RangeCondition {
