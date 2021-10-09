@@ -160,7 +160,7 @@ func Test_queryGet(t *testing.T) {
 	log.Println("query by some index")
 	var infos2 []*FileInfoWithIndex
 	//IndexQuery
-	qc = ldb.VPair(int64(-40), true, int64(-30), true).Or(ldb.VPair(int64(-10), true, int64(10), true)).Or(ldb.VPair(int64(30), true, int64(40), true))
+	qc = (ldb.Gt(int64(-40)).And(ldb.Lt(int64(-30)))).Or(ldb.Gt(int64(-10)).And(ldb.Lt(int64(10))))
 	q = ldb.IndexQuery("LastAccessTime").Range(qc).Limit(10).Offset(0)
 	err = store.Find(&infos2, q)
 	if err != nil {
@@ -181,16 +181,16 @@ func Test_queryGet(t *testing.T) {
 		log.Println(v)
 	}
 
-	//log.Println("query by some index without range")
-	//var infos4 []FileInfoWithIndex
-	//q = ldb.IndexQuery("Rate").Offset(10).Limit(10)
-	//err = store.Find(&infos4, q)
-	//if err != nil {
-	//	log.Println(err)
-	//}
-	//for _, v := range infos4 {
-	//	log.Println(v)
-	//}
+	log.Println("query by some index without range")
+	var infos4 []FileInfoWithIndex
+	q = ldb.IndexQuery("Rate").Offset(10).Limit(10)
+	err = store.Find(&infos4, q)
+	if err != nil {
+		log.Println(err)
+	}
+	for _, v := range infos4 {
+		log.Println(v)
+	}
 	//
 	//log.Println("query by some index without range")
 	//var infos5 []FileInfoWithIndex
@@ -263,7 +263,7 @@ func Test_deleteQuery(t *testing.T) {
 	Test_batchInsert(t)
 
 	log.Println("delete query")
-	q := ldb.IndexQuery("LastAccessTime").Range(ldb.VPair(int64(10), true, int64(20), true))
+	q := ldb.IndexQuery("LastAccessTime").Range(ldb.Ge(int64(10)).And(ldb.Le(int64(20))))
 	err := store.DeleteMatching(&FileInfoWithIndex{}, q)
 	if err != nil {
 		log.Println(err)
@@ -384,7 +384,7 @@ func Test_reindex(t *testing.T) {
 }
 
 func mixUsage(round int) {
-	for j := 0; j < 1000; j++ {
+	for j := 0; j < 500; j++ {
 		log.Println("start round ", j+1)
 		startTime := time.Now()
 		//insert
@@ -461,8 +461,8 @@ func Test_M(t *testing.T) {
 	}
 
 	wg := &sync.WaitGroup{}
-	wg.Add(10)
-	for i := 0; i < 10; i++ {
+	wg.Add(20)
+	for i := 0; i < 20; i++ {
 		j := i
 		go func() {
 			mixUsage(j)

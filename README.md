@@ -130,10 +130,72 @@ if this given key not exist, err ErrNotFound will return.
 
 use query
 ```go
+var q *ldb.Query
+var qc *ldb.RangeCondition
+var err error
+
+//query by key
+log.Println("query by key")
+var infos []*FileInfoWithIndex
+//KeyQuery
+qc = ldb.Ge("20").And(ldb.Le("50"))
+q = ldb.KeyQuery().Range(qc)
+err = store.Find(&infos, q)
+if err != nil {
+	log.Println(err)
+}
+for _, v := range infos {
+	log.Println(v)
+}
+
+//IndexQuery
+log.Println("query by some index")
+var infos2 []*FileInfoWithIndex
+qc = (ldb.Gt(int64(-40)).And(ldb.Lt(int64(-30)))).Or(ldb.Gt(int64(-10)).And(ldb.Lt(int64(10))))
+q = ldb.IndexQuery("LastAccessTime").Range(qc).Limit(10).Offset(0)
+err = store.Find(&infos2, q)
+if err != nil {
+log.Println(err)
+}
+for _, v := range infos2 {
+log.Println(v)
+}
+
+//IndexQuery without range
+log.Println("query by some index without range")
+var infos4 []FileInfoWithIndex
+q = ldb.IndexQuery("Rate").Offset(10).Limit(10)
+err = store.Find(&infos4, q)
+if err != nil {
+log.Println(err)
+}
+for _, v := range infos4 {
+log.Println(v)
+}
 
 ```
 query condition example:
 ```go
+//range condition example
+qc:=ldb.Gt(value)
+qc:=ldb.Lt(value)
+qc:=ldb.Gt(value).And(ldb.Lt(value))
+qc:=ldb.Gt(value).Or(ldb.lt(value))
+qc:=ldb.Gt(value).And(ldb.Lt(value)).Or(ldb.Gt(value).And(ldb.Lt(value)))
+
+//range query
+q = ldb.IndexQuery("some index").Range(qc)
+
+//equal query
+q = ldb.IndexQuery("some index").Equal(value)
+
+//limit offset desc or asc
+q = ldb.IndexQuery("some index").Range(qc).Limit(10).Offset(10).Desc()
+
+err = store.Find(&distV, q)
+if err != nil {
+log.Println(err)
+}
 
 ```
 The Range query can not get the correct result if the index value is not sortable. Do not use Range query with unsortable index or key.
@@ -156,7 +218,12 @@ log.Println(v)
 
 ### Update query
 ```go
-
+log.Println("delete query")
+q := ldb.IndexQuery("LastAccessTime").Range(ldb.Ge(int64(10)).And(ldb.Le(int64(20))))
+err := store.DeleteMatching(&FileInfoWithIndex{}, q)
+if err != nil {
+	log.Println(err)
+}
 ```
 
 ### Delete
@@ -171,5 +238,10 @@ if err != nil {
 
 by query
 ```go
-
+log.Println("delete query")
+q := ldb.IndexQuery("LastAccessTime").Range(ldb.Ge(int64(10)).And(ldb.Le(int64(20))))
+err := store.DeleteMatching(&FileInfoWithIndex{}, q)
+if err != nil {
+	log.Println(err)
+}
 ```
