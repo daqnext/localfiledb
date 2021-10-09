@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 )
 
 var store *ldb.Store
@@ -383,14 +384,14 @@ func Test_reindex(t *testing.T) {
 }
 
 func mixUsage(round int) {
-	for j := 0; j < 100; j++ {
+	for j := 0; j < 1000; j++ {
 		log.Println("start round ", j+1)
-
+		startTime := time.Now()
 		//insert
 		err := store.Bolt().Update(func(tx *bbolt.Tx) error {
 			for i := 0; i < 10000; i++ {
-				hashKey := fmt.Sprintf("%d", round*1000000+j*10000+i)
-				bindName := fmt.Sprintf("bindname-%01d", rand.Intn(10000))
+				hashKey := fmt.Sprintf("%d", rand.Intn(100000000))
+				bindName := fmt.Sprintf("bindname-%d", rand.Intn(100000))
 				p := &Pointer{"pointName"}
 				fileInfo := FileInfoWithIndex{
 					BindName:       bindName,
@@ -424,7 +425,7 @@ func mixUsage(round int) {
 		l := fmt.Sprintf("%d", rand.Intn(1000000)+1000000)
 		r := fmt.Sprintf("%d", rand.Intn(2000000)+2000000)
 		qc = ldb.Gt(l).And(ldb.Lt(r))
-		q = ldb.KeyQuery().Range(qc).Limit(1000).Offset(1000).Desc()
+		q = ldb.KeyQuery().Range(qc).Limit(100).Offset(100).Desc()
 		err = store.UpdateMatching(&FileInfoWithIndex{}, q, func(record interface{}) error {
 			v, ok := record.(*FileInfoWithIndex)
 			if !ok {
@@ -438,11 +439,13 @@ func mixUsage(round int) {
 		}
 
 		//delete
-		q = ldb.IndexQuery("Rate").Range(ldb.Ge(float64(-1000)).And(ldb.Le(float64(1000)))).Limit(1000)
+		q = ldb.IndexQuery("Rate").Range(ldb.Ge(float64(-1000)).And(ldb.Le(float64(1000)))).Limit(100)
 		err = store.DeleteMatching(&FileInfoWithIndex{}, q)
 		if err != nil {
 			log.Println("query DeleteMatching err", err)
 		}
+
+		log.Println("round", j+1, "use time", time.Since(startTime).Milliseconds(), "ms")
 	}
 }
 
